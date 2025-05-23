@@ -1,0 +1,25 @@
+{
+  "name": "email-project-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "npm run dev --prefix Web\\ Front\\ End",
+    "dev:backend": "npm run dev --prefix email-assistant-backend",
+    "dev": "npm run dev:frontend & npm run dev:backend",
+    "build:frontend": "npm run build --prefix Web\\ Front\\ End",
+    "start:backend": "npm start --prefix email-assistant-backend",
+    "lint:frontend": "npm run lint --prefix Web\\ Front\\ End"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Haslerboi/Email---Front-Backend.git"
+  },
+  "keywords": ["monorepo", "email", "assistant"],
+  "author": "Your Name",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Haslerboi/Email---Front-Backend/issues"
+  },
+  "homepage": "https://github.com/Haslerboi/Email---Front-Backend#readme",
+  "description": "Monorepo for Email Assistant frontend and backend."
+}
