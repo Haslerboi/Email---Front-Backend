@@ -3,14 +3,23 @@ import axiosLogger from 'axios-logger';
 
 // Determine API base URL based on environment
 let apiBaseURL;
+
+// const railwayAppUrl = 'https://your-actual-railway-app-name.up.railway.app/api'; // Replace with your app's URL
+const railwayAppUrl = 'https://assistant-backend-production-fc69.up.railway.app/api'; // Using the known URL
+
 if (import.meta.env.DEV) {
-  apiBaseURL = 'http://localhost:3000/api'; // For local development
-} else if (import.meta.env.PROD) {
-  apiBaseURL = 'https://assistant-backend-production-fc69.up.railway.app/api'; // For production
+  // To make local development (npm run dev) point to Railway:
+  apiBaseURL = railwayAppUrl;
+  console.warn(`DEV mode is pointing to LIVE Railway backend: ${apiBaseURL}`);
+  
+  // To make local development point to local backend (original setup):
+  // apiBaseURL = 'http://localhost:3000/api'; 
+} else if (import.meta.env.PROD) { 
+  apiBaseURL = railwayAppUrl;
 } else {
-  // Fallback or error if environment is not recognized
-  apiBaseURL = 'http://localhost:3000/api'; // Default fallback
-  console.warn('Unknown environment, defaulting API base URL to local development.');
+  // Fallback for unknown environments, could also point to Railway or local
+  apiBaseURL = railwayAppUrl; 
+  console.warn(`Unknown environment, defaulting API base URL to LIVE Railway backend: ${apiBaseURL}`);
 }
 
 // Create an axios instance with default config
@@ -370,6 +379,20 @@ export const emailApi = {
       throw error;
     }
   },
+
+  deleteTask: async (taskId) => {
+    console.log(`API: deleteTask called for task ID: ${taskId}`);
+    try {
+      // Note: The backend route is /api/tasks/:taskId
+      // The baseURL in api.js is already /api, so just /tasks/:taskId
+      const response = await api.delete(`/tasks/${taskId}`);
+      console.log('API: deleteTask response from backend:', response.data);
+      return response; // Contains { message: ... } on success
+    } catch (error) {
+      console.error(`API Error deleting task ${taskId}:`, error);
+      throw error; // Re-throw to be handled by the calling component
+    }
+  }
 };
 
 // Authentication related API calls

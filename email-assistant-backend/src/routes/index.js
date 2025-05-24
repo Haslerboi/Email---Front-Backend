@@ -130,4 +130,23 @@ router.post('/process-answered-email/:inputId', async (req, res) => {
   }
 });
 
+// DELETE /api/tasks/:taskId endpoint (New)
+router.delete('/tasks/:taskId', async (req, res) => {
+  const { taskId } = req.params;
+  logger.info(`Backend: Received request to delete task ${taskId}`);
+  try {
+    const removed = await TaskStateManager.removeTask(taskId);
+    if (removed) {
+      logger.info(`Task ${taskId} deleted successfully from backend.`);
+      res.status(200).json({ message: `Task ${taskId} deleted successfully.` });
+    } else {
+      logger.warn(`Task ${taskId} not found for deletion.`);
+      res.status(404).json({ status: 'error', message: `Task ${taskId} not found.` });
+    }
+  } catch (error) {
+    logger.error(`Error deleting task ${taskId}:`, { errorMessage: error.message, stack: error.stack });
+    res.status(500).json({ status: 'error', message: `Failed to delete task ${taskId}: ${error.message}` });
+  }
+});
+
 export default router; 

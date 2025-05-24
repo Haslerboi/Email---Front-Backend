@@ -6,6 +6,7 @@ import {
   List, ListItem, ListItemButton, ListItemText, Divider, IconButton as MuiIconButton
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 function InputProcessingPage() {
   const { currentUser } = useAuth();
@@ -15,6 +16,7 @@ function InputProcessingPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [submissionStatus, setSubmissionStatus] = useState(null);
+  const [deletingTaskId, setDeletingTaskId] = useState(null);
 
   useEffect(() => {
     const loadTasks = async () => {
@@ -73,6 +75,26 @@ function InputProcessingPage() {
     }
   };
 
+  const handleDeleteTask = async (taskIdToDelete, event) => {
+    event.stopPropagation();
+    if (window.confirm('Are you sure you want to delete this task?')) {
+      setDeletingTaskId(taskIdToDelete);
+      setError(null);
+      try {
+        await emailApi.deleteTask(taskIdToDelete);
+        setInputTasks(prevTasks => prevTasks.filter(task => task.id !== taskIdToDelete));
+        if (selectedTask && selectedTask.id === taskIdToDelete) {
+          setSelectedTask(null);
+        }
+      } catch (err) {
+        console.error('Failed to delete task:', err);
+        setError(`Failed to delete task ${taskIdToDelete}. Please try again.`);
+      } finally {
+        setDeletingTaskId(null);
+      }
+    }
+  };
+
   if (isLoading && inputTasks.length === 0 && !error) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '80vh' }}>
@@ -103,12 +125,26 @@ function InputProcessingPage() {
           <List disablePadding>
             {inputTasks.map((task, index) => (
               <React.Fragment key={task.id}>
-                <ListItemButton onClick={() => handleTaskSelect(task)}>
-                  <ListItemText 
-                    primary={task.originalEmail.subject}
-                    secondary={`From: ${task.originalEmail.sender}`}
-                  />
-                </ListItemButton>
+                <ListItem 
+                  secondaryAction={
+                    <MuiIconButton 
+                      edge="end" 
+                      aria-label="delete task"
+                      onClick={(e) => handleDeleteTask(task.id, e)}
+                      disabled={deletingTaskId === task.id}
+                    >
+                      {deletingTaskId === task.id ? <CircularProgress size={20} /> : <DeleteIcon />}
+                    </MuiIconButton>
+                  }
+                  disablePadding
+                >
+                  <ListItemButton onClick={() => handleTaskSelect(task)}>
+                    <ListItemText 
+                      primary={task.originalEmail.subject}
+                      secondary={`From: ${task.originalEmail.sender}`}
+                    />
+                  </ListItemButton>
+                </ListItem>
                 {index < inputTasks.length - 1 && <Divider />}
               </React.Fragment>
             ))}
