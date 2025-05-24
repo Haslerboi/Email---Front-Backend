@@ -4,8 +4,8 @@ import cors from 'cors';
 import morgan from 'morgan';
 import { config } from './config/env.js';
 import routes from './routes/index.js';
-import { checkForNewEmails } from './services/gmail/index.js'; // ✅ move this here
-import telegramPolling from './services/telegram/polling.js';
+import { checkForNewEmails } from './services/gmail/index.js';
+// import telegramPolling from './services/telegram/polling.js'; // Removed
 import logger from './utils/logger.js';
 
 const app = express();
@@ -50,101 +50,34 @@ app.listen(PORT, () => {
   console.log(`http://localhost:${PORT}`);
 });
 
-// Add support for both webhook and polling modes
-if (config.telegram.useWebhook) {
-  logger.info('Using webhook mode for Telegram', { tag: 'telegram' });
-  console.log('✅ Using webhook mode for Telegram notifications');
-  
-  // If we have a webhook URL configured, set it up
-  if (config.telegram.webhookUrl) {
-    fetch(`https://api.telegram.org/bot${config.telegram.botToken}/setWebhook`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        url: config.telegram.webhookUrl,
-        allowed_updates: ['message', 'callback_query']
-      })
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.ok) {
-        logger.info(`Successfully set webhook to ${config.telegram.webhookUrl}`, { tag: 'telegram' });
-        console.log(`✅ Webhook set to ${config.telegram.webhookUrl}`);
-      } else {
-        logger.error(`Failed to set webhook: ${data.description}`, { tag: 'telegram' });
-        console.error(`❌ Failed to set webhook: ${data.description}`);
-      }
-    })
-    .catch(error => {
-      logger.error(`Error setting webhook: ${error.message}`, { tag: 'telegram' });
-      console.error(`❌ Error setting webhook: ${error.message}`);
-    });
-  } else {
-    logger.warn('Webhook mode enabled but no webhook URL provided', { tag: 'telegram' });
-    console.warn('⚠️ Webhook mode enabled but no webhook URL provided');
-  }
-} else {
-  // Start polling service after a short delay
-  console.log('Starting Telegram polling service...');
-  const startupDelay = Math.random() * 3000; // Random delay up to 3 seconds
-  console.log(`Delaying Telegram polling startup by ${Math.round(startupDelay)}ms to reduce conflicts...`);
-  
-  setTimeout(() => {
-    logger.info('Starting Telegram polling service', { tag: 'telegram' });
-    import('./services/telegram/polling.js')
-      .then(telegramPolling => {
-        // Import and use processUpdate directly from controller
-        import('./controllers/telegram.js')
-          .then(telegramController => {
-            // Define the handler that will process updates
-            const handleUpdate = async (update) => {
-              try {
-                // Use the processUpdate function from the controller
-                return await telegramController.processUpdate(update);
-              } catch (error) {
-                logger.error(`Error in handleUpdate: ${error.message}`, {
-                  tag: 'telegram',
-                  error: error.stack
-                });
-                console.error(`❌ Error processing update: ${error.message}`);
-                return { success: false, error: error.message };
-              }
-            };
-            
-            telegramPolling.default.startPolling(handleUpdate, 3000 + Math.random() * 2000);
-            console.log('✅ Telegram polling service started successfully');
-          })
-          .catch(error => {
-            logger.error(`Failed to import telegram controller: ${error.message}`, { tag: 'telegram' });
-            console.error(`❌ Failed to start Telegram polling: ${error.message}`);
-          });
-      })
-      .catch(error => {
-        logger.error(`Failed to start Telegram polling: ${error.message}`, { tag: 'telegram' });
-        console.error(`❌ Failed to start Telegram polling: ${error.message}`);
-      });
-  }, startupDelay);
-}
+// Removed Telegram webhook and polling logic
+// The if (config.telegram.useWebhook) block and its else counterpart have been removed.
 
-// ✅ Gmail polling loop
-const GMAIL_CHECK_INTERVAL = 60 * 1000; // 1 minute
+// ✅ Gmail polling loop (This is important and kept)
+const GMAIL_CHECK_INTERVAL = config.GMAIL_CHECK_INTERVAL_MS || (60 * 1000); // 1 minute default, configurable
 let gmailCheckCount = 0;
 
 const checkGmail = () => {
   gmailCheckCount++;
   console.log(`🔍 Checking Gmail... (Check #${gmailCheckCount}, Instance ${APP_INSTANCE_ID})`);
   
-  // Add jitter to avoid synchronization between instances
-  const nextCheckDelay = GMAIL_CHECK_INTERVAL + (Math.random() * 10000);
+  const jitter = (Math.random() * 10000) - 5000; // Add jitter +/- 5 seconds to base interval
+  const nextCheckDelay = GMAIL_CHECK_INTERVAL + jitter;
   
-  checkForNewEmails().finally(() => {
-    setTimeout(checkGmail, nextCheckDelay);
-  });
+  checkForNewEmails() // This function now needs to be the one that potentially creates tasks for the frontend
+    .catch(error => {
+      logger.error('Error during checkForNewEmails:', { error: error.message, stack: error.stack });
+    })
+    .finally(() => {
+      // Ensure timeout is positive
+      setTimeout(checkGmail, Math.max(5000, nextCheckDelay)); // Minimum 5 second delay
+    });
 };
 
 // Start Gmail checking with initial delay to reduce startup load
-setTimeout(checkGmail, 15000 + Math.floor(Math.random() * 10000));
+// And add a small random jitter to the initial start as well
+const initialDelay = (config.GMAIL_INITIAL_DELAY_MS || 15000) + Math.floor(Math.random() * 5000);
+setTimeout(checkGmail, initialDelay);
+console.log(`Gmail polling will start in approximately ${Math.round(initialDelay/1000)} seconds.`);
 
 export default app;

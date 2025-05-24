@@ -4,11 +4,8 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { EmailProvider } from './contexts/EmailContext';
 import Layout from './components/layout/Layout';
 import LoginPage from './pages/LoginPage';
-import InboxPage from './pages/InboxPage';
-import DraftsPage from './pages/DraftsPage';
-import QuestionsPage from './pages/QuestionsPage';
-import HistoryPage from './pages/HistoryPage';
 import DebugPage from './pages/DebugPage';
+import InputProcessingPage from './pages/InputProcessingPage';
 
 // Create a custom theme
 const theme = createTheme({
@@ -51,10 +48,7 @@ function App() {
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<InboxPage />} />
-                <Route path="drafts" element={<DraftsPage />} />
-                <Route path="questions" element={<QuestionsPage />} />
-                <Route path="history" element={<HistoryPage />} />
+                <Route index element={<InputProcessingPage />} />
                 <Route path="debug" element={<DebugPage />} />
               </Route>
             </Routes>

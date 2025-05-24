@@ -1,61 +1,82 @@
-import { AppBar, Toolbar, Typography, Button, Box } from '@mui/material';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
+import {
+  AppBar, Toolbar, Typography, Button, Box, IconButton, Menu, MenuItem
+} from '@mui/material';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import ApiStatus from './ApiStatus';
+import AccountCircle from '@mui/icons-material/AccountCircle';
 
 export default function Header() {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
+  const [anchorEl, setAnchorEl] = useState(null);
 
-  const navItems = [
-    { title: 'Inbox', path: '/' },
-    { title: 'Drafts', path: '/drafts' },
-    { title: 'Questions', path: '/questions' },
-    { title: 'History', path: '/history' },
-    { title: 'Debug', path: '/debug' }
-  ];
+  const handleMenuOpen = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
 
-  const handleNavClick = (path) => {
-    navigate(path);
+  const handleMenuClose = () => {
+    setAnchorEl(null);
   };
 
   const handleLogout = () => {
     logout();
     navigate('/login');
+    handleMenuClose();
+  };
+
+  const handleNavigate = (path) => {
+    navigate(path);
+    handleMenuClose();
   };
 
   return (
     <AppBar position="static">
       <Toolbar>
-        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+        <Typography variant="h6" component="div" sx={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
           Email Assistant
         </Typography>
         
-        <Box sx={{ display: 'flex', alignItems: 'center', mr: 3 }}>
+        <Box sx={{ flexGrow: 1 }} />
+
+        <Box sx={{ display: 'flex', alignItems: 'center', mr: 1 }}>
           <ApiStatus />
         </Box>
         
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          {navItems.map((item) => (
-            <Button 
-              key={item.path}
+        {currentUser && (
+          <>
+            <IconButton
+              size="large"
+              edge="end"
+              aria-label="account of current user"
+              aria-controls="menu-appbar"
+              aria-haspopup="true"
+              onClick={handleMenuOpen}
               color="inherit"
-              onClick={() => handleNavClick(item.path)}
-              sx={{ 
-                fontWeight: location.pathname === item.path ? 'bold' : 'normal',
-                textDecoration: location.pathname === item.path ? 'underline' : 'none'
-              }}
             >
-              {item.title}
-            </Button>
-          ))}
-          {currentUser && (
-            <Button color="inherit" onClick={handleLogout}>
-              Logout
-            </Button>
-          )}
-        </Box>
+              <AccountCircle />
+            </IconButton>
+            <Menu
+              id="menu-appbar"
+              anchorEl={anchorEl}
+              anchorOrigin={{
+                vertical: 'top',
+                horizontal: 'right',
+              }}
+              keepMounted
+              transformOrigin={{
+                vertical: 'top',
+                horizontal: 'right',
+              }}
+              open={Boolean(anchorEl)}
+              onClose={handleMenuClose}
+            >
+              <MenuItem onClick={() => handleNavigate('/debug')}>Debug Page</MenuItem>
+              <MenuItem onClick={handleLogout}>Logout</MenuItem>
+            </Menu>
+          </>
+        )}
       </Toolbar>
     </AppBar>
   );

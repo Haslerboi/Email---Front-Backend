@@ -1,13 +1,23 @@
 import axios from 'axios';
 import axiosLogger from 'axios-logger';
 
+// Determine API base URL based on environment
+let apiBaseURL;
+if (import.meta.env.DEV) {
+  apiBaseURL = 'http://localhost:3000/api'; // For local development
+} else if (import.meta.env.PROD) {
+  apiBaseURL = 'https://assistant-backend-production-fc69.up.railway.app/api'; // For production
+} else {
+  // Fallback or error if environment is not recognized
+  apiBaseURL = 'http://localhost:3000/api'; // Default fallback
+  console.warn('Unknown environment, defaulting API base URL to local development.');
+}
+
 // Create an axios instance with default config
 const api = axios.create({
-  // Use the Railway-deployed backend URL without /api
-  baseURL: 'https://assistant-backend-production-fc69.up.railway.app',
+  baseURL: apiBaseURL,
   headers: {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
+    'Content-Type': 'application/json'
   },
   withCredentials: false
 });
@@ -65,7 +75,40 @@ api.interceptors.response.use(
 );
 
 // Use mock data as fallback when API endpoints aren't available
-const useMockData = true;
+const useMockData = false;
+
+// New Mock Data for Emails Needing Input
+const mockEmailsNeedingInput = [
+  {
+    id: 'emailInput1',
+    originalEmail: {
+      id: 'origEmail123',
+      subject: 'Urgent: Query about Project Alpha deliverables',
+      sender: 'client@example.com',
+      body: 'Hello Team,\n\nI need an update on the deliverables for Project Alpha. Specifically, what is the status of Task A, and when can we expect the report for Task B? Also, is the issue with Component C resolved?\n\nThanks,\nClient',
+    },
+    draftWithQuestionsTemplate: "Dear Client,\n\nThank you for your email regarding Project Alpha.\n\nRegarding Task A, the status is: {{answer_q1}}.\nWe expect to deliver the report for Task B by {{answer_q2}}.\nConcerning Component C, the current situation is {{answer_q3}}.\n\nBest regards,\nAssistant",
+    questions: [
+      { id: 'q1', text: 'What is the status of Task A?', answer: '' },
+      { id: 'q2', text: 'When can we expect the report for Task B?', answer: '' },
+      { id: 'q3', text: 'Is the issue with Component C resolved? If so, how? If not, what is the plan?', answer: '' },
+    ],
+  },
+  {
+    id: 'emailInput2',
+    originalEmail: {
+      id: 'origEmail456',
+      subject: 'Follow-up: Meeting Minutes & Action Items',
+      sender: 'colleague@example.com',
+      body: 'Hi there,\n\nCould you please confirm if the action item assigned to you from last week\'s meeting (regarding the Q3 budget proposal) has been completed? If not, what\'s the ETA?\n\nBest,\nColleague',
+    },
+    draftWithQuestionsTemplate: 'Hi Colleague,\n\nRegarding the Q3 budget proposal action item: {{answer_q4}}.\nMy estimated time for completion is {{answer_q5}}.\n\nThanks,\nAssistant',
+    questions: [
+      { id: 'q4', text: 'Has the Q3 budget proposal action item been completed? (Yes/No/Partially)', answer: '' },
+      { id: 'q5', text: 'If not fully completed, what is the current ETA for the Q3 budget proposal?', answer: '' },
+    ],
+  }
+];
 
 // Email related API calls
 export const emailApi = {
@@ -73,7 +116,7 @@ export const emailApi = {
   getEmails: async () => {
     try {
       // Try different endpoint paths to find the right one
-      let endpoints = ['/emails', '/api/emails', '/email', '/api/email'];
+      let endpoints = ['/emails']; // Standardize to expect routes under /api via baseURL
       let response = null;
       let error = null;
       
@@ -108,7 +151,7 @@ export const emailApi = {
   getDrafts: async () => {
     try {
       // Try different endpoint paths
-      let endpoints = ['/drafts', '/api/drafts', '/draft', '/api/draft'];
+      let endpoints = ['/drafts']; // Standardize
       let response = null;
       let error = null;
       
@@ -143,7 +186,7 @@ export const emailApi = {
   getQuestions: async () => {
     try {
       // Try different endpoint paths
-      let endpoints = ['/questions', '/api/questions', '/question', '/api/question'];
+      let endpoints = ['/questions']; // Standardize
       let response = null;
       let error = null;
       
@@ -178,7 +221,7 @@ export const emailApi = {
   getHistory: async () => {
     try {
       // Try different endpoint paths
-      let endpoints = ['/history', '/api/history', '/histories', '/api/histories'];
+      let endpoints = ['/history']; // Standardize
       let response = null;
       let error = null;
       
@@ -214,10 +257,7 @@ export const emailApi = {
     try {
       // Try different endpoint paths
       let endpoints = [
-        `/questions/${questionId}/answer`, 
-        `/api/questions/${questionId}/answer`,
-        `/question/${questionId}/answer`,
-        `/api/question/${questionId}/answer`
+        `/questions/${questionId}/answer` // Standardize
       ];
       let response = null;
       let error = null;
@@ -263,10 +303,7 @@ export const emailApi = {
     try {
       // Try different endpoint paths
       let endpoints = [
-        `/drafts/${draftId}/approve`, 
-        `/api/drafts/${draftId}/approve`,
-        `/draft/${draftId}/approve`,
-        `/api/draft/${draftId}/approve`
+        `/drafts/${draftId}/approve` // Standardize
       ];
       let response = null;
       let error = null;
@@ -300,6 +337,39 @@ export const emailApi = {
       throw error;
     }
   },
+
+  getEmailsNeedingInput: async () => {
+    console.log('API: getEmailsNeedingInput called - attempting to fetch from backend');
+    try {
+      // Ensure this path matches what's in backend routes/index.js (e.g., '/emails-needing-input')
+      const response = await api.get('/emails-needing-input'); 
+      console.log('API: getEmailsNeedingInput response from backend:', response.data);
+      return response; // Return the full response object so .data can be accessed
+    } catch (error) {
+      console.error('API Error fetching emails needing input:', error);
+      // Fallback to frontend mock data IF THE ERROR IS A NETWORK ERROR or 404 and we want to allow UI dev.
+      // For now, let's re-throw so we see issues, unless it's a specific case.
+      // To re-enable mock for UI dev if backend isn't ready for this endpoint:
+      // if (some_condition_to_use_mock_eg_error_is_404) {
+      //  console.warn('Returning frontend mock emails needing input data due to API error.');
+      //  return { status: 200, data: mockEmailsNeedingInput }; // mockEmailsNeedingInput is defined above
+      // }
+      throw error; // Re-throw the error to be handled by the calling component
+    }
+  },
+
+  submitAnswersForEmail: async (inputId, answers, completedDraft) => {
+    console.log('API: submitAnswersForEmail called with:', { inputId, answers, completedDraft });
+    try {
+      // Ensure this path matches (e.g., '/process-answered-email/:inputId')
+      const response = await api.post(`/process-answered-email/${inputId}`, { answers }); 
+      console.log('API: submitAnswersForEmail response from backend:', response.data);
+      return response;
+    } catch (error) {
+      console.error('API Error submitting answers:', error);
+      throw error;
+    }
+  },
 };
 
 // Authentication related API calls
@@ -307,7 +377,7 @@ export const authApi = {
   login: async (email, password) => {
     try {
       // Try different endpoint paths
-      let endpoints = ['/auth/login', '/api/auth/login', '/login', '/api/login'];
+      let endpoints = ['/auth/login']; // Standardize
       let response = null;
       let error = null;
       
@@ -348,7 +418,7 @@ export const authApi = {
   logout: async () => {
     try {
       // Try different endpoint paths
-      let endpoints = ['/auth/logout', '/api/auth/logout', '/logout', '/api/logout'];
+      let endpoints = ['/auth/logout']; // Standardize
       let response = null;
       let error = null;
       
@@ -379,7 +449,7 @@ export const authApi = {
   getCurrentUser: async () => {
     try {
       // Try different endpoint paths
-      let endpoints = ['/auth/user', '/api/auth/user', '/user', '/api/user', '/me', '/api/me'];
+      let endpoints = ['/auth/user']; // Standardize
       let response = null;
       let error = null;
       

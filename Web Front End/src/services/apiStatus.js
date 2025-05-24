@@ -5,46 +5,41 @@ import api from './api';
  * @returns {Promise<{ available: boolean, endpoints: Object }>}
  */
 export const checkApiStatus = async () => {
-  const endpointTests = {
-    emails: { available: false, url: null },
-    drafts: { available: false, url: null },
-    questions: { available: false, url: null },
-    history: { available: false, url: null },
-    auth: { available: false, url: null },
-  };
-  
-  // Array of test endpoints to try
-  const testEndpoints = {
-    emails: ['/emails', '/api/emails', '/email', '/api/email'],
-    drafts: ['/drafts', '/api/drafts', '/draft', '/api/draft'],
-    questions: ['/questions', '/api/questions', '/question', '/api/question'],
-    history: ['/history', '/api/history', '/histories', '/api/histories'],
-    auth: ['/auth/user', '/api/auth/user', '/user', '/api/user', '/me', '/api/me']
-  };
-  
-  // Test each endpoint category
-  for (const [category, endpoints] of Object.entries(testEndpoints)) {
-    for (const endpoint of endpoints) {
-      try {
-        const response = await api.get(endpoint, { timeout: 5000 });
-        if (response.status === 200) {
-          endpointTests[category].available = true;
-          endpointTests[category].url = endpoint;
-          break;
-        }
-      } catch (error) {
-        // Continue to the next endpoint
-        console.log(`Endpoint ${endpoint} not available`);
-      }
+  let isBackendAvailable = false;
+  let backendUrl = null;
+
+  try {
+    // Only check a single, reliable backend endpoint like /status or the root
+    // The baseURL in api.js is /api, so '/status' becomes /api/status
+    const response = await api.get('/status', { timeout: 3000 }); 
+    if (response.status === 200) {
+      isBackendAvailable = true;
+      backendUrl = '/api/status'; // Reflecting the full path hit
+      console.log('ApiStatus: Backend /api/status is available.');
+    } else {
+      console.log('ApiStatus: Backend /api/status returned status:', response.status);
     }
+  } catch (error) {
+    console.warn('ApiStatus: Error checking backend /api/status:', error.message);
   }
-  
-  // If any endpoint is available, the API is considered available
-  const isApiAvailable = Object.values(endpointTests).some(test => test.available);
-  
+
+  // For the details in the dialog, we can report on the new primary endpoint
+  // This part doesn't make a real call, just describes what we expect to be available.
+  const endpointDetails = {
+    emailsNeedingInput: {
+      available: isBackendAvailable, // Assume if /status is up, this *should* be too
+      url: '/api/emails-needing-input'
+    },
+    processAnsweredEmail: {
+        available: isBackendAvailable,
+        url: '/api/process-answered-email/:id'
+    }
+    // Add other key endpoints here if needed later, but keep checks minimal
+  };
+
   return {
-    available: isApiAvailable,
-    endpoints: endpointTests
+    available: isBackendAvailable,
+    endpoints: endpointDetails // Simplified details
   };
 };
 
@@ -54,19 +49,20 @@ export const checkApiStatus = async () => {
  */
 export const getApiStatus = async () => {
   try {
-    const status = await checkApiStatus();
+    const statusCheckResult = await checkApiStatus(); // Renamed for clarity
     
-    if (status.available) {
+    if (statusCheckResult.available) {
       return {
         status: 'connected',
-        message: 'Connected to Railway backend',
-        details: status.endpoints
+        // The message can be more generic now, or reflect the baseURL from api.js
+        message: `Connected to backend. (${api.defaults.baseURL})`,
+        details: statusCheckResult.endpoints
       };
     } else {
       return {
         status: 'disconnected',
-        message: 'Could not connect to Railway backend. Using mock data.',
-        details: status.endpoints
+        message: `Could not connect to backend. (${api.defaults.baseURL}) Some features may use mock data or fail.`,
+        details: statusCheckResult.endpoints
       };
     }
   } catch (error) {

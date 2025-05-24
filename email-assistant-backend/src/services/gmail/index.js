@@ -2,7 +2,8 @@
 import { config } from '../../config/env.js';
 import { google } from 'googleapis';
 import { classifyEmail, classifyEmailForPhotographer, generateReply } from '../openai/index.js';
-import { sendTelegramMessage } from '../telegram/index.js';
+import TaskStateManager from '../email-state.js';
+import { v4 as uuidv4 } from 'uuid';
 
 const createOAuth2Client = async () => {
   try {
@@ -195,89 +196,74 @@ const createDraft = async (threadId, to, subject, messageText) => {
 
 const checkForNewEmails = async () => {
   try {
-    const emails = await fetchUnreadEmails(5);
-    if (!emails.length) return;
+    // --- TEMPORARY TEST CODE START ---
+    const emails = [
+      {
+        id: 'testEmail123',
+        threadId: 'testThread456',
+        subject: 'Test Inquiry for Task Creation',
+        sender: 'tester@example.com',
+        recipient: 'me@example.com',
+        date: new Date().toISOString(),
+        body: 'This is a test email body. What is the primary color? And what is the capital of France?'
+      }
+    ];
+    // --- TEMPORARY TEST CODE END ---
+    
+    // const emails = await fetchUnreadEmails(5); // Original line, commented out for testing
+    if (!emails || !emails.length) { // Added null check for emails for safety
+        console.log('No emails to process (real or test).');
+        return;
+    }
 
     for (const email of emails) {
-      console.log(`📩 New Email: "${email.subject}" from ${email.sender}`);
-      await markAsRead(email.id);
+      console.log(`📩 Processing Email: "${email.subject}" from ${email.sender}`);
+      
+      // await markAsRead(email.id); // Comment out for test email, as it doesn't exist in Gmail
 
-      // Debug log to check email object fields
-      console.log('Email object being passed to classifyEmailForPhotographer:', {
-        subject: email.subject,
-        body: email.body ? email.body.substring(0, 100) + '...' : null,
-        sender: email.sender
-      });
-
-      // Ensure required fields are present
       const sanitizedEmail = {
+        id: email.id,
+        threadId: email.threadId,
         subject: email.subject || '[No Subject]',
         body: email.body || '',
-        sender: email.sender || '[Unknown Sender]'
+        sender: email.sender || '[Unknown Sender]',
+        recipient: email.recipient || '',
+        date: email.date || new Date().toISOString()
       };
       
-      // Log if any fields were missing
-      if (!email.subject || !email.body || !email.sender) {
-        console.error('Missing required email fields:', {
-          hasSubject: !!email.subject,
-          hasBody: !!email.body,
-          hasSender: !!email.sender
-        });
-      }
-        
-      // Use photographer-specific classification instead of generic classification
-      const classificationResult = await classifyEmailForPhotographer(sanitizedEmail.body);
-      console.log(`Email classified as: ${classificationResult.classification} with ${classificationResult.questions?.length || 0} questions`);
+      // --- TEMPORARY CLASSIFICATION FOR TESTING ---
+      const classificationResult = {
+        classification: 'needs_input', // Force this path
+        questions: ['What is your favorite color?', 'What is the capital of ImaginaryLand?'],
+        draftTemplate: 'Dear {{senderName}},\n\nRegarding your questions:\n- Favorite Color: {{answer_q1}}\n- Capital of ImaginaryLand: {{answer_q2}}\n\nBest,\nAssistant' // Corrected string escaping for newlines
+      };
+      // const classificationResult = await classifyEmailForPhotographer(sanitizedEmail.body); // Original OpenAI call
+      console.log(`Email classified (test) as: ${classificationResult.classification} with ${classificationResult.questions?.length || 0} questions`);
+      // --- END TEMPORARY CLASSIFICATION ---
       
       if (classificationResult.classification === 'auto_draft') {
-        console.log('🤖 AUTO-DRAFT: Starting automatic reply generation for:', sanitizedEmail.subject);
-        try {
-          // Debug: Check OpenAI API key
-          console.log('OpenAI API key available:', !!config.openai.apiKey);
-          
-          // Generate reply automatically
-          console.log('Calling OpenAI API to generate reply...');
-          const draftResult = await generateReply(sanitizedEmail);
-          console.log('Reply generated successfully, length:', draftResult.replyText.length);
-          
-          // Save as draft in Gmail
-          console.log('Creating Gmail draft with threadId:', email.threadId);
-          await createDraft(
-            email.threadId, 
-            email.sender, 
-            sanitizedEmail.subject, 
-            draftResult.replyText
-          );
-          
-          console.log(`✅ Auto-drafted reply saved for email "${sanitizedEmail.subject}"`);
-          // No Telegram notification for auto-drafted emails
-        } catch (draftError) {
-          console.error('❌ Error creating automatic draft:', draftError);
-          console.error('Error details:', draftError.stack || draftError);
-          
-          // If auto-drafting fails, notify via Telegram
-          await sendTelegramMessage({
-            to: config.telegram.chatId,
-            email: sanitizedEmail,
-            questions: [],
-            action: `Failed to create draft: ${draftError.message}`,
-            classification: 'error'
-          });
-        }
-      } else {
-        console.log('👤 NEEDS INPUT: Email requires human input');
-        // Only send Telegram notification for emails that need input
-        await sendTelegramMessage({
-          to: config.telegram.chatId,
-          email: sanitizedEmail,
-          questions: classificationResult.questions || [],
-          action: 'Needs your input',
-          classification: 'needs_input'
-        });
+        console.log('🤖 SKIPPING AUTO-DRAFT for this test.');
+      } else { // 'needs_input' path
+        console.log('👤 NEEDS INPUT (test): Email requires human input, creating task.');
+        
+        const questionsForTask = (classificationResult.questions || []).map((qText, index) => ({
+          id: uuidv4(), 
+          text: qText
+        }));
+
+        const taskData = {
+          originalEmail: sanitizedEmail,
+          questions: questionsForTask,
+          draftWithQuestionsTemplate: classificationResult.draftTemplate || "",
+          status: 'pending_input'
+        };
+
+        await TaskStateManager.addTask(taskData);
+        console.log(`📝 Task created for email (test) "${sanitizedEmail.subject}" and saved.`);
       }
     }
   } catch (error) {
-    console.error('❌ Error in checkForNewEmails:', error.message);
+    console.error('❌ Error in checkForNewEmails (test run):', error.message);
     console.error('Error stack:', error.stack);
   }
 };

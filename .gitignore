@@ -28,7 +28,15 @@ logs/
 
 # Environment variables
 .env
-.env*.local
+.env.local
+# .env*.local (this was too broad, let's be more specific)
 .env.development.local
 .env.test.local
-.env.production.local 
+.env.production.local
+
+# Allow template/default env files for different environments (usually no secrets here)
+# .env.development
+# .env.production
+
+# Other specific sensitive files
+email-assistant-backend/other_env.txt 

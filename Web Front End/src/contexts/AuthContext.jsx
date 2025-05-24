@@ -19,7 +19,20 @@ export function AuthProvider({ children }) {
         setLoading(true);
         setError(null);
         
-        // Check if we have a token
+        if (import.meta.env.DEV) {
+          // Development mode: Bypass token check and set a mock user
+          console.warn('AuthContext: DEV mode, bypassing real auth and setting mock user.');
+          setCurrentUser({
+            id: 'dev-user-1',
+            name: 'Dev User',
+            email: 'dev@example.com',
+            // Add any other fields your components might expect on a user object
+          });
+          setLoading(false);
+          return;
+        }
+        
+        // Production mode: Check if we have a token
         const token = localStorage.getItem('token');
         if (!token) {
           setLoading(false);
@@ -43,6 +56,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async (email, password) => {
+    // In DEV mode with mock user, this login function might not be strictly necessary
+    // or could be adapted. For now, keeping original logic.
+    // If you call login() in DEV mode, it will overwrite the mock user.
     try {
       setLoading(true);
       setError(null);
@@ -68,13 +84,20 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try {
+      // In DEV mode, if you want logout to clear the mock user, ensure it does.
+      // Or, if logout redirects to a login page, this might be fine.
+      if (!import.meta.env.DEV) { // Only call API if not in DEV mode with mock auth
       await authApi.logout();
+      }
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
       // Clear token and user data regardless of API success
       localStorage.removeItem('token');
-      setCurrentUser(null);
+      setCurrentUser(null); // This will clear the mock user in DEV mode too
+      if (import.meta.env.DEV) {
+        console.warn('AuthContext: DEV mode, user logged out. To re-login, refresh page.');
+      }
     }
   };
 

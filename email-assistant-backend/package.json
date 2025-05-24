@@ -1,7 +1,7 @@
 {
   "name": "email-assistant",
   "version": "1.0.0",
-  "description": "Backend for Email Assistant app with Gmail, OpenAI and Telegram integration",
+  "description": "Backend for Email Assistant app with Gmail, OpenAI and Frontend integration",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
@@ -12,8 +12,8 @@
   "keywords": [
     "gmail",
     "openai",
-    "telegram",
-    "email-assistant"
+    "email-assistant",
+    "react"
   ],
   "author": "",
   "license": "ISC",
@@ -24,8 +24,8 @@
     "googleapis": "^149.0.0",
     "morgan": "^1.10.0",
     "node-fetch": "^3.3.2",
-    "node-telegram-bot-api": "^0.64.0",
-    "open": "^10.1.2"
+    "open": "^10.1.2",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
