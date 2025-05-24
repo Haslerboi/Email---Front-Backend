@@ -219,7 +219,7 @@ const checkForNewEmails = async () => {
     for (const email of emails) {
       console.log(`📩 Processing New Email: "${email.subject}" from ${email.sender}`);
       
-      // await markAsRead(email.id); // Temporarily commented out for easier re-testing
+      await markAsRead(email.id); // Ensure this is UNCOMMENTED for normal operation
 
       const sanitizedEmail = {
         id: email.id,
