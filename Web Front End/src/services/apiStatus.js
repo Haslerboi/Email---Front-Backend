@@ -11,7 +11,7 @@ export const checkApiStatus = async () => {
   try {
     // Only check a single, reliable backend endpoint like /status or the root
     // The baseURL in api.js is /api, so '/status' becomes /api/status
-    const response = await api.get('/status', { timeout: 3000 }); 
+    const response = await api.get('/status', { timeout: 20000 }); 
     if (response.status === 200) {
       isBackendAvailable = true;
       backendUrl = '/api/status'; // Reflecting the full path hit
