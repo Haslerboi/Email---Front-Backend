@@ -103,7 +103,12 @@ const checkGmail = () => {
 
 // Start Gmail checking with initial delay to reduce startup load
 // And add a small random jitter to the initial start as well
-const initialDelay = (config.GMAIL_INITIAL_DELAY_MS || 15000) + Math.floor(Math.random() * 5000);
+
+// Temporarily increase initial delay significantly for Railway testing
+const configuredInitialDelay = parseInt(process.env.GMAIL_INITIAL_DELAY_MS, 10) || 60000; // Default to 60 seconds
+const initialJitter = Math.floor(Math.random() * 5000);
+const initialDelay = configuredInitialDelay + initialJitter;
+
 setTimeout(checkGmail, initialDelay);
 console.log(`Gmail polling will start in approximately ${Math.round(initialDelay/1000)} seconds.`);
 
