@@ -1,7 +1,7 @@
 // Gmail service for interacting with Gmail API
 import { config } from '../../config/env.js';
 import { google } from 'googleapis';
-import { classifyEmail, classifyEmailForPhotographer, generateReply } from '../openai/index.js';
+import { classifyEmailForPhotographer, generateReply } from '../openai/index.js';
 import TaskStateManager from '../email-state.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -196,30 +196,30 @@ const createDraft = async (threadId, to, subject, messageText) => {
 
 const checkForNewEmails = async () => {
   try {
-    // --- TEMPORARY TEST CODE START ---
-    const emails = [
-      {
-        id: 'testEmail123',
-        threadId: 'testThread456',
-        subject: 'Test Inquiry for Task Creation',
-        sender: 'tester@example.com',
-        recipient: 'me@example.com',
-        date: new Date().toISOString(),
-        body: 'This is a test email body. What is the primary color? And what is the capital of France?'
-      }
-    ];
+    // --- TEMPORARY TEST CODE REMOVED ---
+    // const emails = [
+    //   {
+    //     id: 'testEmail123',
+    //     threadId: 'testThread456',
+    //     subject: 'Test Inquiry for Task Creation',
+    //     sender: 'tester@example.com',
+    //     recipient: 'me@example.com',
+    //     date: new Date().toISOString(),
+    //     body: 'This is a test email body. What is the primary color? And what is the capital of France?'
+    //   }
+    // ];
     // --- TEMPORARY TEST CODE END ---
     
-    // const emails = await fetchUnreadEmails(5); // Original line, commented out for testing
-    if (!emails || !emails.length) { // Added null check for emails for safety
-        console.log('No emails to process (real or test).');
+    const emails = await fetchUnreadEmails(5); // Restored original line
+    if (!emails || !emails.length) { 
+        console.log('No new unread emails to process.'); // Updated log
         return;
     }
 
     for (const email of emails) {
-      console.log(`📩 Processing Email: "${email.subject}" from ${email.sender}`);
+      console.log(`📩 Processing New Email: "${email.subject}" from ${email.sender}`);
       
-      // await markAsRead(email.id); // Comment out for test email, as it doesn't exist in Gmail
+      // await markAsRead(email.id); // Temporarily commented out for easier re-testing
 
       const sanitizedEmail = {
         id: email.id,
@@ -231,20 +231,37 @@ const checkForNewEmails = async () => {
         date: email.date || new Date().toISOString()
       };
       
-      // --- TEMPORARY CLASSIFICATION FOR TESTING ---
-      const classificationResult = {
-        classification: 'needs_input', // Force this path
-        questions: ['What is your favorite color?', 'What is the capital of ImaginaryLand?'],
-        draftTemplate: 'Dear {{senderName}},\n\nRegarding your questions:\n- Favorite Color: {{answer_q1}}\n- Capital of ImaginaryLand: {{answer_q2}}\n\nBest,\nAssistant' // Corrected string escaping for newlines
-      };
-      // const classificationResult = await classifyEmailForPhotographer(sanitizedEmail.body); // Original OpenAI call
-      console.log(`Email classified (test) as: ${classificationResult.classification} with ${classificationResult.questions?.length || 0} questions`);
+      // --- TEMPORARY CLASSIFICATION REMOVED ---
+      // const classificationResult = {
+      //   classification: 'needs_input', 
+      //   questions: ['What is your favorite color?', 'What is the capital of ImaginaryLand?'],
+      //   draftTemplate: 'Dear {{senderName}},...Assistant'
+      // };
+      const classificationResult = await classifyEmailForPhotographer(sanitizedEmail.body); // Restored OpenAI call
+      console.log(`Email classified as: ${classificationResult.classification} with ${classificationResult.questions?.length || 0} questions`);
       // --- END TEMPORARY CLASSIFICATION ---
       
       if (classificationResult.classification === 'auto_draft') {
-        console.log('🤖 SKIPPING AUTO-DRAFT for this test.');
-      } else { // 'needs_input' path
-        console.log('👤 NEEDS INPUT (test): Email requires human input, creating task.');
+        console.log('🤖 AUTO-DRAFT: Starting automatic reply generation for:', sanitizedEmail.subject);
+        try {
+          const draftResult = await generateReply(sanitizedEmail);
+          await createDraft(
+            email.threadId, 
+            email.sender, 
+            sanitizedEmail.subject, 
+            draftResult.replyText
+          );
+          console.log(`✅ Auto-drafted reply saved for email "${sanitizedEmail.subject}"`);
+        } catch (draftError) {
+          console.error('❌ Error creating automatic draft:', draftError);
+          // Consider creating a task here if auto-draft fails, e.g.:
+          // classificationResult.classification = 'needs_input'; // Force to needs_input path
+          // classificationResult.questions = ["Review original email and failed auto-draft attempt."];
+        }
+      } 
+      // Ensure there's an explicit check for 'needs_input' or a default else that leads here
+      if (classificationResult.classification === 'needs_input') { // Explicitly check for 'needs_input'
+        console.log('👤 NEEDS INPUT: Email requires human input, creating task.');
         
         const questionsForTask = (classificationResult.questions || []).map((qText, index) => ({
           id: uuidv4(), 
@@ -259,11 +276,14 @@ const checkForNewEmails = async () => {
         };
 
         await TaskStateManager.addTask(taskData);
-        console.log(`📝 Task created for email (test) "${sanitizedEmail.subject}" and saved.`);
+        console.log(`📝 Task created for email "${sanitizedEmail.subject}" and saved.`);
+      } else if (classificationResult.classification !== 'auto_draft') {
+        // If not auto_draft and not explicitly needs_input, log it for now.
+        console.log(`Email "${sanitizedEmail.subject}" classified as '${classificationResult.classification}', no action taken by task system.`);
       }
     }
   } catch (error) {
-    console.error('❌ Error in checkForNewEmails (test run):', error.message);
+    console.error('❌ Error in checkForNewEmails:', error.message); // Updated log
     console.error('Error stack:', error.stack);
   }
 };
