@@ -1,4 +1,4 @@
-import EmailStateManager from './email-state.js';
+import TaskStateManager from './email-state.js';
 import { checkForNewEmails } from './gmail/index.js';
 import logger from '../utils/logger.js';
 
@@ -6,44 +6,46 @@ export async function getApiStatus() {
   const details = {};
   let allHealthy = true;
 
-  // Check EmailStateManager
+  // Check TaskStateManager (formerly EmailStateManager)
   try {
-    const emails = EmailStateManager.listActiveEmails();
-    details.emailState = { available: true, count: emails.length };
+    const tasks = TaskStateManager.listPendingTasks();
+    details.taskState = { available: true, count: tasks.length };
   } catch (error) {
-    details.emailState = { available: false, error: error.message };
+    logger.error('Error checking TaskState in apiStatus:', error);
+    details.taskState = { available: false, error: error.message };
     allHealthy = false;
   }
 
-  // Check Gmail (simulate by calling checkForNewEmails with a dry run if possible)
+  // Check Gmail service availability
   try {
-    // If checkForNewEmails supports a dry run, use it. Otherwise, just check that it's callable.
     if (typeof checkForNewEmails === 'function') {
-      details.gmail = { available: true };
+      details.gmailService = { available: true, status: 'Service function available' };
     } else {
-      throw new Error('Gmail service not available');
+      throw new Error('Gmail service (checkForNewEmails function) not available');
     }
   } catch (error) {
-    details.gmail = { available: false, error: error.message };
+    logger.error('Error checking Gmail service in apiStatus:', error);
+    details.gmailService = { available: false, error: error.message };
     allHealthy = false;
   }
 
-  // Check Telegram config
+  // Check OpenAI API Key (basic check, not a live call for status)
   try {
     const config = (await import('../config/env.js')).config;
-    if (config.telegram && config.telegram.botToken) {
-      details.telegram = { available: true };
+    if (config.openai && config.openai.apiKey) {
+      details.openaiConfig = { available: true, status: 'API key configured' };
     } else {
-      throw new Error('Telegram config missing');
+      throw new Error('OpenAI API key not configured');
     }
   } catch (error) {
-    details.telegram = { available: false, error: error.message };
+    logger.error('Error checking OpenAI config in apiStatus:', error);
+    details.openaiConfig = { available: false, error: error.message };
     allHealthy = false;
   }
 
   return {
     status: allHealthy ? 'connected' : 'degraded',
-    message: allHealthy ? 'API is healthy' : 'Some subsystems are down',
+    message: allHealthy ? 'API is healthy and configured' : 'One or more API subsystems have issues or are not configured',
     details
   };
 } 
