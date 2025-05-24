@@ -8,8 +8,11 @@ import { checkForNewEmails } from './services/gmail/index.js';
 // import telegramPolling from './services/telegram/polling.js'; // Removed
 import logger from './utils/logger.js';
 
+console.log(`DEBUG: Railway process.env.PORT is: ${process.env.PORT}`); // Log the PORT Railway provides
+
 const app = express();
-const PORT = config.PORT || 3000;
+const PORT = config.PORT; // Rely purely on config.PORT now, which should pick up process.env.PORT
+console.log(`DEBUG: App will listen on PORT: ${PORT} (from config)`);
 const APP_INSTANCE_ID = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
 
 // Configure logger with instance ID
