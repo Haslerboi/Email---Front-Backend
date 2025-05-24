@@ -77,21 +77,19 @@ function InputProcessingPage() {
 
   const handleDeleteTask = async (taskIdToDelete, event) => {
     event.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this task?')) {
-      setDeletingTaskId(taskIdToDelete);
-      setError(null);
-      try {
-        await emailApi.deleteTask(taskIdToDelete);
-        setInputTasks(prevTasks => prevTasks.filter(task => task.id !== taskIdToDelete));
-        if (selectedTask && selectedTask.id === taskIdToDelete) {
-          setSelectedTask(null);
-        }
-      } catch (err) {
-        console.error('Failed to delete task:', err);
-        setError(`Failed to delete task ${taskIdToDelete}. Please try again.`);
-      } finally {
-        setDeletingTaskId(null);
+    setDeletingTaskId(taskIdToDelete);
+    setError(null);
+    try {
+      await emailApi.deleteTask(taskIdToDelete);
+      setInputTasks(prevTasks => prevTasks.filter(task => task.id !== taskIdToDelete));
+      if (selectedTask && selectedTask.id === taskIdToDelete) {
+        setSelectedTask(null);
       }
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+      setError(`Failed to delete task ${taskIdToDelete}. Please try again.`);
+    } finally {
+      setDeletingTaskId(null);
     }
   };
 
