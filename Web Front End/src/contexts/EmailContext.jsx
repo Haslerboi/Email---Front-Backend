@@ -12,102 +12,56 @@ export function EmailProvider({ children }) {
   const [drafts, setDrafts] = useState([]);
   const [pendingQuestions, setPendingQuestions] = useState([]);
   const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Function to fetch all data from API
   const fetchAllData = async () => {
-    console.log('EmailContext: Starting to fetch data...');
+    console.log('EmailContext: fetchAllData called. NOTE: Most fetches are currently disabled for simplified UI.');
     setLoading(true);
     setError(null);
     
     try {
-      // Fetch emails
-      console.log('EmailContext: Fetching emails from API...');
-      const emailsResponse = await emailApi.getEmails();
-      console.log('EmailContext: Emails received:', emailsResponse);
+      // // Fetch emails (Currently disabled for simplified UI)
+      // console.log('EmailContext: Fetching emails from API...');
+      // const emailsResponse = await emailApi.getEmails();
+      // console.log('EmailContext: Emails received:', emailsResponse);
+      // // ... (processing logic for emailsResponse)
+      // setEmails(emailData);
       
-      // Process emails
-      let emailData = [];
-      if (emailsResponse.data) {
-        if (Array.isArray(emailsResponse.data)) {
-          emailData = emailsResponse.data;
-        } else if (emailsResponse.data.emails) {
-          emailData = emailsResponse.data.emails;
-        } else if (emailsResponse.data.data) {
-          emailData = emailsResponse.data.data;
-        } else if (typeof emailsResponse.data === 'object') {
-          emailData = [emailsResponse.data];
-        }
-      }
-      setEmails(emailData);
+      // // Fetch drafts (Currently disabled)
+      // console.log('EmailContext: Fetching drafts from API...');
+      // const draftsResponse = await emailApi.getDrafts();
+      // // ... (processing logic for draftsResponse)
+      // setDrafts(draftData);
       
-      // Fetch drafts
-      console.log('EmailContext: Fetching drafts from API...');
-      const draftsResponse = await emailApi.getDrafts();
-      console.log('EmailContext: Drafts received:', draftsResponse);
+      // // Fetch questions (Currently disabled)
+      // console.log('EmailContext: Fetching questions from API...');
+      // const questionsResponse = await emailApi.getQuestions();
+      // // ... (processing logic for questionsResponse)
+      // setPendingQuestions(questionData);
       
-      // Process drafts
-      let draftData = [];
-      if (draftsResponse.data) {
-        if (Array.isArray(draftsResponse.data)) {
-          draftData = draftsResponse.data;
-        } else if (draftsResponse.data.drafts) {
-          draftData = draftsResponse.data.drafts;
-        } else if (draftsResponse.data.data) {
-          draftData = draftsResponse.data.data;
-        }
-      }
-      setDrafts(draftData);
+      // // Fetch history (Currently disabled)
+      // console.log('EmailContext: Fetching history from API...');
+      // const historyResponse = await emailApi.getHistory();
+      // // ... (processing logic for historyResponse)
+      // setHistory(historyData);
       
-      // Fetch questions
-      console.log('EmailContext: Fetching questions from API...');
-      const questionsResponse = await emailApi.getQuestions();
-      console.log('EmailContext: Questions received:', questionsResponse);
-      
-      // Process questions
-      let questionData = [];
-      if (questionsResponse.data) {
-        if (Array.isArray(questionsResponse.data)) {
-          questionData = questionsResponse.data;
-        } else if (questionsResponse.data.questions) {
-          questionData = questionsResponse.data.questions;
-        } else if (questionsResponse.data.data) {
-          questionData = questionsResponse.data.data;
-        }
-      }
-      setPendingQuestions(questionData);
-      
-      // Fetch history
-      console.log('EmailContext: Fetching history from API...');
-      const historyResponse = await emailApi.getHistory();
-      console.log('EmailContext: History received:', historyResponse);
-      
-      // Process history
-      let historyData = [];
-      if (historyResponse.data) {
-        if (Array.isArray(historyResponse.data)) {
-          historyData = historyResponse.data;
-        } else if (historyResponse.data.history) {
-          historyData = historyResponse.data.history;
-        } else if (historyResponse.data.data) {
-          historyData = historyResponse.data.data;
-        }
-      }
-      setHistory(historyData);
-      
+      // Simulate completion for now as no actual calls are made that would set loading to false otherwise
+      console.log('EmailContext: Mock data loading complete (fetches disabled).');
+
     } catch (err) {
-      console.error('EmailContext: Error fetching data:', err);
-      setError('Failed to load data from the server. Please try again later.');
+      console.error('EmailContext: Error in (disabled) fetchAllData:', err);
+      setError('An error occurred (fetches disabled).');
     } finally {
       setLoading(false);
-      console.log('EmailContext: Finished loading data');
+      console.log('EmailContext: Finished (disabled) fetchAllData');
     }
   };
 
-  // Load all data on mount
   useEffect(() => {
-    fetchAllData();
+    // fetchAllData(); // Temporarily disable fetchAllData on mount
+    console.log('EmailContext: Initial fetchAllData on mount is currently disabled.');
+    setLoading(false); // Ensure loading is false if not fetching
   }, []);
 
   // Function to answer a pending question
