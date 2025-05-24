@@ -19,9 +19,6 @@ try {
   console.log('\nFiles in src/services directory:');
   console.log(fs.readdirSync(path.join(__dirname, 'src', 'services')).join(', '));
   
-  console.log('\nFiles in src/controllers directory:');
-  console.log(fs.readdirSync(path.join(__dirname, 'src', 'controllers')).join(', '));
-  
   // Check if email-state.js exists
   const emailStatePath = path.join(__dirname, 'src', 'services', 'email-state.js');
   console.log('\nDoes email-state.js exist?', fs.existsSync(emailStatePath));
