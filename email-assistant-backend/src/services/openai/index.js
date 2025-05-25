@@ -1,5 +1,6 @@
 // OpenAI service for interacting with OpenAI API
 import { config } from '../../config/env.js';
+import logger from '../utils/logger.js';
 
 /**
  * Extract JSON from a string that might contain markdown code blocks
@@ -240,7 +241,7 @@ ${originalEmail.body}
  */
 export const generateReply = async (originalEmail, answers = null, systemGuide = null) => {
   logger.info('OpenAI Service - generateReply (for auto_draft or general) called.', {tag: 'openaiService'});
-  if (!config.openai.apiKey) {
+    if (!config.openai.apiKey) {
     // ... (existing fallback) ...
     logger.warn('OpenAI API key not found. Using fallback reply method.', {tag: 'openaiService'});
       const replyContent = `Hello,\n\nThank you for your email regarding "${originalEmail.subject}". I'll get back to you with more information soon.\n\nBest regards,\nEmail Assistant`;
@@ -250,8 +251,8 @@ export const generateReply = async (originalEmail, answers = null, systemGuide =
         tone: 'professional',
         timestamp: new Date().toISOString(),
       };
-  }
-  
+    }
+
   let effectiveSystemGuide = systemGuide;
   if (!effectiveSystemGuide) {
     // Load a default guide if none provided, especially for auto_draft
@@ -263,15 +264,15 @@ export const generateReply = async (originalEmail, answers = null, systemGuide =
 
   let qaBlock = "";
   // ... (logic for answers/qaBlock, adapted from generateReplyFromContext or simplified for auto_draft)
-  if (answers && Object.keys(answers).length > 0) {
+    if (answers && Object.keys(answers).length > 0) {
     qaBlock = "User's answers to specific questions:\n";
-    for (const [question, answer] of Object.entries(answers)) {
+      for (const [question, answer] of Object.entries(answers)) {
         qaBlock += `Question: ${question}\nAnswer: ${answer}\n\n`;
-    }
+      }
     qaBlock = `\n\n--- USER-PROVIDED ANSWERS ---\n${qaBlock}\n--- END OF USER-PROVIDED ANSWERS ---`;
-  } else {
+    } else {
       qaBlock = "\n\n(No specific user answers were provided for this reply.)";
-  }
+    }
 
   const userPrompt = `ORIGINAL EMAIL:
 From: ${originalEmail.sender}
@@ -290,40 +291,40 @@ Please write only the body of the reply email.`;
   // ... (Make fetch call to OpenAI API, similar to generateGuidedReply, using 'messages') ...
   // ... (Handle response and errors) ...
   // This part needs to be completed based on the structure of generateGuidedReply
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.openai.apiKey}`
-      },
-      body: JSON.stringify({
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.openai.apiKey}`
+        },
+        body: JSON.stringify({
         model: 'gpt-4o', 
         messages: messages,
-        temperature: 0.7,
-        max_tokens: 800
-      })
-    });
-    if (!response.ok) {
-      const errorData = await response.json();
+          temperature: 0.7,
+          max_tokens: 800
+        })
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
       logger.error('OpenAI API error response (generateReply):', {tag: 'openaiService', errorData});
-      throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
-    }
-    const data = await response.json();
+        throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+      }
+      const data = await response.json();
     const replyContent = data.choices[0]?.message?.content?.trim();
     if (!replyContent) {
         logger.error('OpenAI response did not contain reply content (generateReply).', {tag: 'openaiService', data});
         throw new Error('OpenAI did not return reply content.');
     }
     return { // generateReply returns an object, unlike generateGuidedReply
-      replyText: replyContent,
+        replyText: replyContent,
       suggestedSubject: originalEmail.subject.startsWith('Re:') ? originalEmail.subject : `Re: ${originalEmail.subject}`,
-      timestamp: new Date().toISOString(),
-    };
-  } catch (apiError) {
+        timestamp: new Date().toISOString(),
+      };
+    } catch (apiError) {
     logger.error('Error during OpenAI API call (generateReply):', {tag: 'openaiService', apiError});
     const fallbackReply = `Hello,\n\nThank you for your email regarding "${originalEmail.subject}". I'll get back to you with more information soon.\n\nBest regards,\nEmail Assistant`;
-    return {
+      return {
         replyText: fallbackReply,
         suggestedSubject: originalEmail.subject.startsWith('Re:') ? originalEmail.subject : `Re: ${originalEmail.subject}`,
         timestamp: new Date().toISOString(),
