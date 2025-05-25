@@ -106,7 +106,7 @@ Respond with ONLY valid JSON, no code blocks or formatting, in this exact format
           'Authorization': `Bearer ${config.openai.apiKey}`
         },
         body: JSON.stringify({
-          model: 'gpt-4o', 
+          model: 'gpt-4.1', 
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3, 
           max_tokens: 500,
@@ -162,7 +162,7 @@ export const generateGuidedReply = async (systemGuide, originalEmail, answeredQu
     return "I have received your information and will process your request shortly. (OpenAI key not configured)";
   }
 
-  logger.info('OpenAI Service - Generating guided reply with GPT-4o (or similar premium model)', {tag: 'openaiService'});
+  logger.info('OpenAI Service - Generating guided reply with GPT-4.1 (or similar premium model)', {tag: 'openaiService'});
 
   let qaBlock = "";
   if (answeredQuestions && answeredQuestions.length > 0) {
@@ -190,7 +190,7 @@ Based on the newest message in the thread from ${originalEmail.sender} and the p
   ];
 
   const promptForLogging = `System Prompt: ${systemGuide.substring(0,100)}... User Prompt: ${userPromptContent.substring(0,200)}...`;
-  logger.debug('Sending prompt to GPT-4o:', {tag: 'openaiService', promptContext: promptForLogging});
+  logger.debug('Sending prompt to GPT-4.1:', {tag: 'openaiService', promptContext: promptForLogging});
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -200,7 +200,7 @@ Based on the newest message in the thread from ${originalEmail.sender} and the p
         'Authorization': `Bearer ${config.openai.apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o', 
+        model: 'gpt-4.1', 
         messages: messages,
         temperature: 0.6, 
         max_tokens: 1500 
@@ -296,7 +296,7 @@ Please write only the body of the reply email.`;
           'Authorization': `Bearer ${config.openai.apiKey}`
         },
         body: JSON.stringify({
-        model: 'gpt-4o', 
+        model: 'gpt-4.1', 
         messages: messages,
           temperature: 0.7,
           max_tokens: 800

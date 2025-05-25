@@ -98,7 +98,7 @@ const checkGmail = () => {
     .finally(() => {
       // Ensure timeout is positive
       setTimeout(checkGmail, Math.max(5000, nextCheckDelay)); // Minimum 5 second delay
-    });
+  });
 };
 
 // Start Gmail checking with initial delay to reduce startup load

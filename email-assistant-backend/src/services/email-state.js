@@ -62,7 +62,7 @@ const TaskStateManager = {
   addTask: async (taskData) => {
     if (!taskData || !taskData.originalEmail) {
         logger.warn('Attempted to add invalid task data', { tag: 'task-state', taskData });
-        return null;
+      return null;
     }
     const taskId = taskData.id || uuidv4();
     const taskToAdd = { ...taskData, id: taskId, createdAt: new Date().toISOString() };
