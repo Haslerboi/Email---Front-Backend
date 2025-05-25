@@ -33,7 +33,6 @@ const extractJsonFromGeminiResponse = (text) => {
 export const triageAndCategorizeEmail = async (emailBody) => {
   if (!genAI) {
     logger.error('Gemini API client not initialized. Cannot process email.', { tag: 'geminiService' });
-    // Fallback behavior: treat as needing input and 'Other' category
     return {
       isSpamOrUnimportant: false,
       needsHumanInput: true,
@@ -46,7 +45,7 @@ export const triageAndCategorizeEmail = async (emailBody) => {
   if (!emailBody || typeof emailBody !== 'string' || emailBody.trim() === '') {
     logger.warn('triageAndCategorizeEmail called with empty or invalid emailBody', {tag: 'geminiService'});
     return {
-        isSpamOrUnimportant: true, // Treat empty as unimportant
+        isSpamOrUnimportant: true, 
         needsHumanInput: false,
         questions: [],
         category: 'Other',
@@ -56,15 +55,20 @@ export const triageAndCategorizeEmail = async (emailBody) => {
 
   const model = genAI.getGenerativeModel({ 
     model: "gemini-1.5-flash-latest",
-    generationConfig: { responseMimeType: "application/json" } // Request JSON output
+    generationConfig: { responseMimeType: "application/json" } 
   });
 
-  const prompt = `Analyze the following email content. Provide your analysis ONLY in a valid JSON format, with no markdown code blocks or other formatting. The JSON object should have the following fields:
-- "isSpamOrUnimportant": boolean (true if the email is spam, a simple notification, an automated message, out-of-office, or clearly doesn't require a reply from the business owner; false otherwise)
-- "category": string (categorize the email into one of: "Wedding Enquiry", "Main Website Enquiry", or "Other")
-- "needsHumanInput": boolean (true if specific information not found in the email is required from the business owner to draft a meaningful reply; false if a reply can be drafted using general templates or if no reply is needed because it's spam/unimportant)
-- "questions": array of strings (if needsHumanInput is true, list the specific questions the business owner needs to answer to enable a reply. If needsHumanInput is false, this should be an empty array.)
-- "reasoning": string (a brief explanation for your classification and decisions)
+  const prompt = `Analyze the following email content. Your goal is to help a photographer/videographer manage their inbox efficiently. Provide your analysis ONLY in a valid JSON format, with no markdown code blocks or other formatting. The JSON object must have the following fields:
+
+1.  "isSpamOrUnimportant": boolean. Set to true if the email is clear spam, a trivial notification (e.g., social media like, simple payment receipt not needing action), an out-of-office auto-reply, or clearly promotional and doesn't require a reply from the business owner. Otherwise, set to false.
+
+2.  "category": string. Categorize the email into one of: "Wedding Enquiry", "Main Website Enquiry", or "Other". Choose the most fitting category.
+
+3.  "questionsFromSender": array of strings. Carefully analyze the email body and extract any direct questions the SENDER has explicitly asked. List each distinct question as a string in the array. If the sender asked no direct questions, this must be an empty array []. Do NOT invent questions the sender didn't ask.
+
+4.  "needsHumanInput": boolean. Set to true if "isSpamOrUnimportant" is false AND the "questionsFromSender" array is NOT empty (meaning the sender asked questions that need answers from the business owner). If "isSpamOrUnimportant" is false and "questionsFromSender" IS empty, set this to false (implying an auto-draft can be attempted based on the category).
+
+5.  "reasoning": string. Briefly explain your decisions for classification, spam detection, and why human input is or isn't needed.
 
 Email Content:
 """
@@ -74,22 +78,27 @@ ${emailBody}
 JSON Response:`;
 
   try {
-    logger.info('Sending request to Gemini API for triage and categorization...', { tag: 'geminiService' });
+    logger.info('Sending request to Gemini API for refined triage and categorization...', { tag: 'geminiService' });
     const result = await model.generateContent(prompt);
     const response = result.response;
     const responseText = response.text();
     
     logger.info('Received response from Gemini API.', { tag: 'geminiService' });
-    // console.log('Gemini Raw Response Text:', responseText); // For debugging
-
     const parsedResult = extractJsonFromGeminiResponse(responseText);
     logger.info('Successfully parsed Gemini response.', { tag: 'geminiService', parsedResult });
 
-    // Validate and structure the output
+    // Validate and structure the output based on the new prompt structure
+    const isSpam = typeof parsedResult.isSpamOrUnimportant === 'boolean' ? parsedResult.isSpamOrUnimportant : true;
+    const questions = Array.isArray(parsedResult.questionsFromSender) ? parsedResult.questionsFromSender : [];
+    // Determine needsHumanInput based on spam status and if sender asked questions
+    const determinedNeedsHumanInput = !isSpam && questions.length > 0;
+
     return {
-      isSpamOrUnimportant: typeof parsedResult.isSpamOrUnimportant === 'boolean' ? parsedResult.isSpamOrUnimportant : true, // Default to true if missing
-      needsHumanInput: typeof parsedResult.needsHumanInput === 'boolean' ? parsedResult.needsHumanInput : !parsedResult.isSpamOrUnimportant, // Default based on spam status
-      questions: Array.isArray(parsedResult.questions) ? parsedResult.questions : [],
+      isSpamOrUnimportant: isSpam,
+      // Use the 'needsHumanInput' from Gemini if provided and valid, otherwise derive it.
+      // Gemini might have nuances (e.g. no questions but still needs input due to category), let's allow its decision.
+      needsHumanInput: typeof parsedResult.needsHumanInput === 'boolean' ? parsedResult.needsHumanInput : determinedNeedsHumanInput,
+      questions: questions, // These are now questions *from the sender*
       category: ['Wedding Enquiry', 'Main Website Enquiry', 'Other'].includes(parsedResult.category) ? parsedResult.category : 'Other',
       reasoning: parsedResult.reasoning || 'No reasoning provided by Gemini.'
     };
@@ -97,14 +106,12 @@ JSON Response:`;
   } catch (error) {
     logger.error('Error calling Gemini API or processing its response:', { 
         tag: 'geminiService', 
-        errorMessage: error.message, 
-        // stack: error.stack // Stack might be too verbose for regular logs unless debugging
+        errorMessage: error.message,
     });
-    // Fallback in case of Gemini API error
     return {
       isSpamOrUnimportant: false,
-      needsHumanInput: true,
-      questions: ['Failed to analyze email with AI. Please review manually.'],
+      needsHumanInput: true, // Fallback to needing human input on error
+      questions: ['Failed to analyze email with AI (Gemini). Please review manually.'],
       category: 'Other',
       reasoning: `Gemini API error: ${error.message}`
     };
