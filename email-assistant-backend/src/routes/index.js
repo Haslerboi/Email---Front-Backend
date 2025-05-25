@@ -77,15 +77,15 @@ router.post('/process-answered-email/:inputId', async (req, res) => {
   const frontendAnswers = req.body.answers;
 
   if (!frontendAnswers) {
+    logger.warn(`Answers not provided for task ${inputId}.`);
     return res.status(400).json({ status: 'error', message: 'Answers not provided.' });
   }
-  logger.info(`Processing answers for task ${inputId}`, { inputId, frontendAnswers });
+  logger.info(`Processing answers for task ${inputId}`, { inputId /*, frontendAnswers */ }); // Avoid logging potentially large answers object by default
 
   try {
     const task = TaskStateManager.getTask(inputId);
-    // Deep log of the fetched task object
     try {
-        logger.info(`Fetched task object for ID ${inputId}:`, {tag: 'routes', fetchedTask: JSON.parse(JSON.stringify(task)) });
+        logger.info(`Fetched task object for ID ${inputId}:`, {tag: 'routes', fetchedTask: task ? JSON.parse(JSON.stringify(task)) : null });
     } catch (logError) {
         logger.error('Error during deep logging fetchedTask:', {tag: 'routes', logError});
         logger.info(`Simplified fetched task for ID ${inputId} (due to logging error):`, {tag: 'routes', taskId: task?.id, hasOriginalEmail: !!task?.originalEmail, numQuestions: task?.questions?.length, category: task?.category });
@@ -107,9 +107,8 @@ router.post('/process-answered-email/:inputId', async (req, res) => {
 
     logger.info(`Fetching guide for category: ${task.category}`, { inputId });
     const systemGuide = await getGuidanceForCategory(task.category);
-    if (!systemGuide || systemGuide.includes("Please provide a helpful")) { // Check for fallback guide indicating error
-        logger.error(`Could not load a valid system guide for category ${task.category} for task ${inputId}. Using basic fallback.`, { systemGuide });
-        // Potentially use a very generic system prompt if load fails critically
+    if (!systemGuide || systemGuide.includes("Please provide a helpful")) {
+        logger.warn(`Could not load a valid system guide for category ${task.category} for task ${inputId}. Using basic fallback or problem with template content.`, { inputId, systemGuidePreview: systemGuide?.substring(0,100) });
     }
 
     logger.info(`Generating guided reply for task ${inputId} using GPT-4.1 (or similar premium model).`, { inputId });
@@ -138,7 +137,12 @@ router.post('/process-answered-email/:inputId', async (req, res) => {
     });
 
   } catch (error) {
-    logger.error(`Error processing task ${inputId}:`, { inputId, errorMessage: error.message, stack: error.stack });
+    // New, more explicit logging for errors in this route
+    logger.error(`--- ERROR PROCESSING TASK ${inputId} ---`);
+    logger.error(`Error Message: ${error.message}`);
+    logger.error(`Error Stack: ${error.stack}`);
+    logger.error(`Associated Task ID: ${inputId}`);
+    logger.error(`--- END ERROR DETAILS ---`);
     res.status(500).json({ status: 'error', message: `Failed to process task ${inputId}: ${error.message}` });
   }
 });
