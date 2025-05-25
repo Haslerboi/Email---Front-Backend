@@ -58,19 +58,19 @@ export const triageAndCategorizeEmail = async (emailBody) => {
     generationConfig: { responseMimeType: "application/json" } 
   });
 
-  const prompt = `Analyze the following email content. Your goal is to help a photographer/videographer manage their inbox efficiently. Provide your analysis ONLY in a valid JSON format, with no markdown code blocks or other formatting. The JSON object must have the following fields:
+  const prompt = `Analyze the following email content. The email body may contain a full thread history. Focus your analysis primarily on the newest message in the thread (usually at the top or the part not obviously quoted from a previous email). Provide your analysis ONLY in a valid JSON format, with no markdown code blocks or other formatting. The JSON object must have the following fields:
 
-1.  "isSpamOrUnimportant": boolean. Set to true if the email is clear spam, a trivial notification (e.g., social media like, simple payment receipt not needing action), an out-of-office auto-reply, or clearly promotional and doesn't require a reply from the business owner. Otherwise, set to false.
+1.  "isSpamOrUnimportant": boolean. Based on the newest message, set to true if the email is clear spam, a trivial notification, an out-of-office auto-reply, or clearly doesn't require a reply from the business owner. Otherwise, set to false.
 
-2.  "category": string. Categorize the email into one of: "Wedding Enquiry", "Main Website Enquiry", or "Other". Choose the most fitting category.
+2.  "category": string. Based on the newest message, categorize the email into one of: "Wedding Enquiry", "Main Website Enquiry", or "Other".
 
-3.  "questionsFromSender": array of strings. Carefully analyze the email body and extract any direct questions the SENDER has explicitly asked. List each distinct question as a string in the array. If the sender asked no direct questions, this must be an empty array []. Do NOT invent questions the sender didn't ask.
+3.  "questionsFromSender": array of strings. Carefully analyze the newest message in the email body and extract any direct questions the SENDER of THAT LATEST MESSAGE has explicitly asked. List each distinct question as a string in the array. If the latest sender asked no direct questions, this must be an empty array []. Do NOT invent questions the sender didn't ask, and do not extract questions from older, quoted parts of the email thread.
 
-4.  "needsHumanInput": boolean. Set to true if "isSpamOrUnimportant" is false AND the "questionsFromSender" array is NOT empty (meaning the sender asked questions that need answers from the business owner). If "isSpamOrUnimportant" is false and "questionsFromSender" IS empty, set this to false (implying an auto-draft can be attempted based on the category).
+4.  "needsHumanInput": boolean. Set to true if "isSpamOrUnimportant" is false AND the "questionsFromSender" array (from the latest message) is NOT empty. If "isSpamOrUnimportant" is false and "questionsFromSender" IS empty, set this to false (implying an auto-draft can be attempted).
 
-5.  "reasoning": string. Briefly explain your decisions for classification, spam detection, and why human input is or isn't needed.
+5.  "reasoning": string. Briefly explain your decisions, referencing the newest message where possible.
 
-Email Content:
+Email Content (may include full thread history):
 """
 ${emailBody}
 """
@@ -78,7 +78,7 @@ ${emailBody}
 JSON Response:`;
 
   try {
-    logger.info('Sending request to Gemini API for refined triage and categorization...', { tag: 'geminiService' });
+    logger.info('Sending request to Gemini API for refined triage and categorization (focus on latest message)...', { tag: 'geminiService' });
     const result = await model.generateContent(prompt);
     const response = result.response;
     const responseText = response.text();
@@ -87,18 +87,14 @@ JSON Response:`;
     const parsedResult = extractJsonFromGeminiResponse(responseText);
     logger.info('Successfully parsed Gemini response.', { tag: 'geminiService', parsedResult });
 
-    // Validate and structure the output based on the new prompt structure
     const isSpam = typeof parsedResult.isSpamOrUnimportant === 'boolean' ? parsedResult.isSpamOrUnimportant : true;
     const questions = Array.isArray(parsedResult.questionsFromSender) ? parsedResult.questionsFromSender : [];
-    // Determine needsHumanInput based on spam status and if sender asked questions
     const determinedNeedsHumanInput = !isSpam && questions.length > 0;
 
     return {
       isSpamOrUnimportant: isSpam,
-      // Use the 'needsHumanInput' from Gemini if provided and valid, otherwise derive it.
-      // Gemini might have nuances (e.g. no questions but still needs input due to category), let's allow its decision.
       needsHumanInput: typeof parsedResult.needsHumanInput === 'boolean' ? parsedResult.needsHumanInput : determinedNeedsHumanInput,
-      questions: questions, // These are now questions *from the sender*
+      questions: questions, 
       category: ['Wedding Enquiry', 'Main Website Enquiry', 'Other'].includes(parsedResult.category) ? parsedResult.category : 'Other',
       reasoning: parsedResult.reasoning || 'No reasoning provided by Gemini.'
     };
@@ -110,7 +106,7 @@ JSON Response:`;
     });
     return {
       isSpamOrUnimportant: false,
-      needsHumanInput: true, // Fallback to needing human input on error
+      needsHumanInput: true, 
       questions: ['Failed to analyze email with AI (Gemini). Please review manually.'],
       category: 'Other',
       reasoning: `Gemini API error: ${error.message}`

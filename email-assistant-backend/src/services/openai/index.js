@@ -162,38 +162,35 @@ export const generateGuidedReply = async (systemGuide, originalEmail, answeredQu
     return "I have received your information and will process your request shortly. (OpenAI key not configured)";
   }
 
-  logger.info('OpenAI Service - Generating guided reply with GPT-4.1 (or similar premium model)', {tag: 'openaiService'});
+  logger.info('OpenAI Service - Generating guided reply with GPT-4o (or similar premium model)', {tag: 'openaiService'});
 
   let qaBlock = "";
   if (answeredQuestions && answeredQuestions.length > 0) {
-    qaBlock = answeredQuestions.map(qa => `User's Answer to: "${qa.questionText}"\nAnswer: "${qa.userAnswer}"`).join('\n\n');
-    qaBlock = `\n\n--- USER-PROVIDED ANSWERS TO SPECIFIC QUESTIONS ---\n${qaBlock}\n--- END OF USER-PROVIDED ANSWERS ---`;
+    qaBlock = answeredQuestions.map(qa => `Business Owner's Answer to: "${qa.questionText}"\nAnswer: "${qa.userAnswer}"`).join('\n\n');
+    qaBlock = `\n\n--- SPECIFIC ANSWERS FROM BUSINESS OWNER ---\n${qaBlock}\n--- END OF SPECIFIC ANSWERS ---`;
   } else {
-    qaBlock = "\n\n(No specific questions were answered by the user for this reply.)";
+    qaBlock = "\n\n(No specific answers were provided by the business owner for this reply.)";
   }
 
-  // The main user prompt will just be the original email and the Q&A block.
-  // The systemGuide will be the system prompt.
-  const userMessages = [
-    {
-      role: 'user',
-      content: `Here is the original email I received:\n\n--- ORIGINAL EMAIL RECEIVED ---
+  const userPromptContent = `The following is an email thread. Please focus on crafting a reply to the newest message from "${originalEmail.sender}".
+
+--- FULL EMAIL THREAD RECEIVED (NEWEST MESSAGE IS TYPICALLY AT THE TOP OR NOT INDENTED) ---
 From: ${originalEmail.sender}
 Subject: ${originalEmail.subject}
 
-Body:
+Body (may contain full thread):
 ${originalEmail.body}
---- END OF ORIGINAL EMAIL ---${qaBlock}`
-    }
-  ];
+--- END OF FULL EMAIL THREAD ---${qaBlock}
+
+Based on the newest message in the thread from ${originalEmail.sender} and the provided "SPECIFIC ANSWERS FROM BUSINESS OWNER" (if any), please compose ONLY the body of the reply email.`;
 
   const messages = [
-    { role: 'system', content: systemGuide },
-    ...userMessages
+    { role: 'system', content: systemGuide }, // systemGuide comes from templateManager
+    { role: 'user', content: userPromptContent }
   ];
 
-  const promptForLogging = `System Prompt: ${systemGuide.substring(0,100)}... User Messages: ${JSON.stringify(userMessages).substring(0,100)}...`;
-  logger.debug('Sending prompt to GPT-4.1 (or similar):', {tag: 'openaiService', prompt: promptForLogging});
+  const promptForLogging = `System Prompt: ${systemGuide.substring(0,100)}... User Prompt: ${userPromptContent.substring(0,200)}...`;
+  logger.debug('Sending prompt to GPT-4o:', {tag: 'openaiService', promptContext: promptForLogging});
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -203,9 +200,9 @@ ${originalEmail.body}
         'Authorization': `Bearer ${config.openai.apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o', // Or your preferred premium model like GPT-4.1 Turbo if available/specified
+        model: 'gpt-4o', 
         messages: messages,
-        temperature: 0.6, // Slightly lower for more guided replies
+        temperature: 0.6, 
         max_tokens: 1500 
       })
     });
