@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { config } from '../../config/env.js';
+import { config } from '../config/env.js';
 import logger from '../utils/logger.js';
 
 let genAI;
