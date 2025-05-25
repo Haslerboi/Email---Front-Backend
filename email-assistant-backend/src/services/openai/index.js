@@ -1,6 +1,6 @@
 // OpenAI service for interacting with OpenAI API
 import { config } from '../../config/env.js';
-import logger from '../utils/logger.js';
+import logger from '../../utils/logger.js';
 
 /**
  * Extract JSON from a string that might contain markdown code blocks
