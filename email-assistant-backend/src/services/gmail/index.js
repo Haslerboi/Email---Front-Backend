@@ -285,6 +285,5 @@ export {
   getGmailClient,
   fetchUnreadEmails,
   markAsRead,
-  createDraft,
-  checkForNewEmails
+  createDraft
 };
