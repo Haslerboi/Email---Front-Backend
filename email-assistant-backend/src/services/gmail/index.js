@@ -1,9 +1,12 @@
 // Gmail service for interacting with Gmail API
 import { config } from '../../config/env.js';
 import { google } from 'googleapis';
-import { classifyEmailForPhotographer, generateReply } from '../openai/index.js';
+import { classifyEmailForPhotographer, generateReply as openAIGenerateReply, generateGuidedReply } from '../openai/index.js';
+import { triageAndCategorizeEmail as geminiTriageAndCategorize } from '../geminiService.js';
+import { getGuidanceForCategory } from '../templateManager.js';
 import TaskStateManager from '../email-state.js';
 import { v4 as uuidv4 } from 'uuid';
+import logger from '../../utils/logger.js';
 
 const createOAuth2Client = async () => {
   try {
@@ -194,32 +197,19 @@ const createDraft = async (threadId, to, subject, messageText) => {
   }
 };
 
-const checkForNewEmails = async () => {
+export const checkForNewEmails = async () => {
+  logger.info('checkForNewEmails: Starting process.', {tag: 'gmailService'});
   try {
-    // --- TEMPORARY TEST CODE REMOVED ---
-    // const emails = [
-    //   {
-    //     id: 'testEmail123',
-    //     threadId: 'testThread456',
-    //     subject: 'Test Inquiry for Task Creation',
-    //     sender: 'tester@example.com',
-    //     recipient: 'me@example.com',
-    //     date: new Date().toISOString(),
-    //     body: 'This is a test email body. What is the primary color? And what is the capital of France?'
-    //   }
-    // ];
-    // --- TEMPORARY TEST CODE END ---
-    
-    const emails = await fetchUnreadEmails(5); // Restored original line
-    if (!emails || !emails.length) { 
-        console.log('No new unread emails to process.'); // Updated log
-        return;
+    const emails = await fetchUnreadEmails(5); 
+    if (!emails || !emails.length) {
+      logger.info('checkForNewEmails: No new unread emails to process.', {tag: 'gmailService'});
+      return;
     }
 
     for (const email of emails) {
-      console.log(`📩 Processing New Email: "${email.subject}" from ${email.sender}`);
+      logger.info(`Processing New Email: "${email.subject}" from ${email.sender}`, {tag: 'gmailService', emailId: email.id });
       
-      await markAsRead(email.id); // Ensure this is UNCOMMENTED for normal operation
+      // await markAsRead(email.id); // Keep commented for testing if needed, uncomment for production
 
       const sanitizedEmail = {
         id: email.id,
@@ -231,61 +221,63 @@ const checkForNewEmails = async () => {
         date: email.date || new Date().toISOString()
       };
       
-      // --- TEMPORARY CLASSIFICATION REMOVED ---
-      // const classificationResult = {
-      //   classification: 'needs_input', 
-      //   questions: ['What is your favorite color?', 'What is the capital of ImaginaryLand?'],
-      //   draftTemplate: 'Dear {{senderName}},...Assistant'
-      // };
-      const classificationResult = await classifyEmailForPhotographer(sanitizedEmail.body); // Restored OpenAI call
-      console.log(`Email classified as: ${classificationResult.classification} with ${classificationResult.questions?.length || 0} questions`);
-      // --- END TEMPORARY CLASSIFICATION ---
-      
-      if (classificationResult.classification === 'auto_draft') {
-        console.log('🤖 AUTO-DRAFT: Starting automatic reply generation for:', sanitizedEmail.subject);
-        try {
-          const draftResult = await generateReply(sanitizedEmail);
-          await createDraft(
-            email.threadId, 
-            email.sender, 
-            sanitizedEmail.subject, 
-            draftResult.replyText
-          );
-          console.log(`✅ Auto-drafted reply saved for email "${sanitizedEmail.subject}"`);
-        } catch (draftError) {
-          console.error('❌ Error creating automatic draft:', draftError);
-          // Consider creating a task here if auto-draft fails, e.g.:
-          // classificationResult.classification = 'needs_input'; // Force to needs_input path
-          // classificationResult.questions = ["Review original email and failed auto-draft attempt."];
-        }
-      } 
-      // Ensure there's an explicit check for 'needs_input' or a default else that leads here
-      if (classificationResult.classification === 'needs_input') { // Explicitly check for 'needs_input'
-        console.log('👤 NEEDS INPUT: Email requires human input, creating task.');
-        
-        const questionsForTask = (classificationResult.questions || []).map((qText, index) => ({
-          id: uuidv4(), 
+      logger.info('Calling Gemini for triage and categorization...', {tag: 'gmailService', emailId: sanitizedEmail.id});
+      const geminiResult = await geminiTriageAndCategorize(sanitizedEmail.body);
+      logger.info('Gemini Result:', {tag: 'gmailService', emailId: sanitizedEmail.id, geminiResult});
+
+      if (geminiResult.isSpamOrUnimportant) {
+        logger.info(`Email "${sanitizedEmail.subject}" marked as spam/unimportant by Gemini. Ending workflow.`, {tag: 'gmailService'});
+        await markAsRead(sanitizedEmail.id); // Mark as read if spam/unimportant
+        continue; // Move to the next email
+      }
+
+      if (geminiResult.needsHumanInput) {
+        logger.info(`Email "${sanitizedEmail.subject}" requires human input. Creating task.`, {tag: 'gmailService'});
+        const questionsForTask = (geminiResult.questions || []).map((qText) => ({
+          id: uuidv4(),
           text: qText
         }));
 
         const taskData = {
           originalEmail: sanitizedEmail,
           questions: questionsForTask,
-          draftWithQuestionsTemplate: classificationResult.draftTemplate || "",
-          status: 'pending_input'
+          category: geminiResult.category, // Store category for later use
+          // draftWithQuestionsTemplate can be omitted if not directly used by frontend for this task type anymore
+          status: 'pending_input' 
         };
-
         await TaskStateManager.addTask(taskData);
-        console.log(`📝 Task created for email "${sanitizedEmail.subject}" and saved.`);
-      } else if (classificationResult.classification !== 'auto_draft') {
-        // If not auto_draft and not explicitly needs_input, log it for now.
-        console.log(`Email "${sanitizedEmail.subject}" classified as '${classificationResult.classification}', no action taken by task system.`);
+        logger.info(`Task created for email "${sanitizedEmail.subject}".`, {tag: 'gmailService'});
+
+      } else { // No human input needed, attempt auto-draft
+        logger.info(`Email "${sanitizedEmail.subject}" does not need human input. Attempting auto-draft. Category: ${geminiResult.category}`, {tag: 'gmailService'});
+        try {
+          const systemGuide = await getGuidanceForCategory(geminiResult.category);
+          // Use the original openaiService.generateReply for auto-drafts, passing the guide
+          const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
+          
+          if (draftResult && draftResult.replyText) {
+            await createDraft(
+              sanitizedEmail.threadId,
+              sanitizedEmail.sender,
+              sanitizedEmail.subject,
+              draftResult.replyText
+            );
+            logger.info(`Auto-drafted reply saved for email "${sanitizedEmail.subject}" using category '${geminiResult.category}'`, {tag: 'gmailService'});
+            await markAsRead(sanitizedEmail.id); // Mark as read after successful auto-draft
+          } else {
+            logger.warn('Auto-draft generation failed to produce reply text.', {tag: 'gmailService', emailId: sanitizedEmail.id });
+            // Optionally, create a task here if auto-draft fails significantly
+          }
+        } catch (draftError) {
+          logger.error('Error during auto-draft process:', {tag: 'gmailService', emailId: sanitizedEmail.id, draftError});
+          // Optionally, create a task for manual review if auto-draft errors out
+        }
       }
     }
   } catch (error) {
-    console.error('❌ Error in checkForNewEmails:', error.message); // Updated log
-    console.error('Error stack:', error.stack);
+    logger.error('Error in checkForNewEmails:', {tag: 'gmailService', errorMessage: error.message, stack: error.stack });
   }
+  logger.info('checkForNewEmails: Finished process.', {tag: 'gmailService'});
 };
 
 export {

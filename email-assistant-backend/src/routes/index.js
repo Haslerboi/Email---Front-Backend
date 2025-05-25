@@ -4,7 +4,9 @@ import { Router } from 'express';
 // import telegramRoutes from './telegram.js'; // To be removed
 import { getApiStatus } from '../services/apiStatus.js';
 import TaskStateManager from '../services/email-state.js'; // Updated import name
-import { generateReplyFromContext } from '../services/openai/index.js'; // Import the new function
+// import { generateReplyFromContext } from '../services/openai/index.js'; // Old function
+import { generateGuidedReply } from '../services/openai/index.js'; // New function
+import { getGuidanceForCategory } from '../services/templateManager.js'; // Import template manager
 import { createDraft } from '../services/gmail/index.js'; // Import createDraft
 import logger from '../utils/logger.js'; // Ensure logger is imported if not already
 
@@ -72,51 +74,55 @@ router.get('/emails-needing-input', (req, res) => {
 // POST /api/process-answered-email/:inputId endpoint
 router.post('/process-answered-email/:inputId', async (req, res) => {
   const { inputId } = req.params;
-  const  frontendAnswers = req.body.answers; // Assuming frontend sends { answers: { q_id: 'ans'} }
+  const frontendAnswers = req.body.answers;
 
   if (!frontendAnswers) {
-    return res.status(400).json({ status: 'error', message: 'Answers not provided in request body.'});
+    return res.status(400).json({ status: 'error', message: 'Answers not provided.' });
   }
+  logger.info(`Processing answers for task ${inputId}`, { inputId, frontendAnswers });
 
-  console.log(`Backend: Received answers for task ${inputId}:`, frontendAnswers);
-  
   try {
     const task = TaskStateManager.getTask(inputId);
     if (!task) {
-      logger.warn(`Task ${inputId} not found for processing.`);
+      logger.warn(`Task ${inputId} not found for processing answers.`);
       return res.status(404).json({ status: 'error', message: `Task ${inputId} not found.` });
     }
-
-    // Prepare answeredQuestions array for generateReplyFromContext
-    // It expects [{ questionText: '...', userAnswer: '...' }]
-    // The task.questions is [{ id: '...', text: '...' }]
-    // The frontendAnswers is { question_id_from_task: 'user answer' }
-    const preparedAnsweredQuestions = task.questions.map(q => ({
-      questionText: q.text,
-      userAnswer: frontendAnswers[q.id] || 'No answer provided' // Use question ID from task.questions to find answer
-    }));
-
-    logger.info(`Generating reply for task ${inputId} with prepared answers.`);
-    const replyText = await generateReplyFromContext(task.originalEmail, preparedAnsweredQuestions);
-
-    if (!replyText || replyText.includes('(Error communicating with AI assistant)') || replyText.includes('(OpenAI key not configured)')){
-        logger.error(`Failed to generate reply text from OpenAI for task ${inputId}. Reply was: ${replyText}`);
-        // Don't remove task, let it be tried again or flagged
-        return res.status(500).json({ status: 'error', message: 'Failed to generate reply from AI. Task not processed.' });
+    if (!task.originalEmail || !task.questions || !task.category) {
+        logger.error(`Task ${inputId} is missing critical data (originalEmail, questions, or category).`, { task });
+        return res.status(500).json({ status: 'error', message: 'Task data is incomplete.' });
     }
 
-    logger.info(`Reply generated for task ${inputId}. Attempting to create draft in Gmail.`);
+    const preparedAnsweredQuestions = task.questions.map(q => ({
+      questionText: q.text,
+      userAnswer: frontendAnswers[q.id] || 'No answer provided'
+    }));
+
+    logger.info(`Fetching guide for category: ${task.category}`, { inputId });
+    const systemGuide = await getGuidanceForCategory(task.category);
+    if (!systemGuide || systemGuide.includes("Please provide a helpful")) { // Check for fallback guide indicating error
+        logger.error(`Could not load a valid system guide for category ${task.category} for task ${inputId}. Using basic fallback.`, { systemGuide });
+        // Potentially use a very generic system prompt if load fails critically
+    }
+
+    logger.info(`Generating guided reply for task ${inputId} using GPT-4.1 (or similar premium model).`, { inputId });
+    const replyText = await generateGuidedReply(systemGuide, task.originalEmail, preparedAnsweredQuestions);
+
+    if (!replyText || replyText.includes('(Error communicating with AI assistant)') || replyText.includes('(OpenAI key not configured)')){
+      logger.error(`Failed to generate reply text from OpenAI for task ${inputId}. Reply was: ${replyText}`, { inputId });
+      return res.status(500).json({ status: 'error', message: 'Failed to generate reply from AI. Task not processed.' });
+    }
+
+    logger.info(`Reply generated for task ${inputId}. Attempting to create draft in Gmail.`, { inputId });
     await createDraft(
       task.originalEmail.threadId,
-      task.originalEmail.sender, // Replying to the original sender
+      task.originalEmail.sender,
       task.originalEmail.subject,
       replyText
     );
-    logger.info(`Gmail draft created for task ${inputId}.`);
+    logger.info(`Gmail draft created for task ${inputId}.`, { inputId });
 
-    // If all successful, remove the task
     await TaskStateManager.removeTask(inputId);
-    logger.info(`Task ${inputId} processed and removed successfully.`);
+    logger.info(`Task ${inputId} processed and removed successfully.`, { inputId });
 
     res.json({
       message: `Answers for task ${inputId} processed. Email draft created in Gmail.`,
@@ -124,9 +130,8 @@ router.post('/process-answered-email/:inputId', async (req, res) => {
     });
 
   } catch (error) {
-    logger.error(`Error processing task ${inputId}:`, { errorMessage: error.message, stack: error.stack });
-    // We might not want to send the full error.stack to client
-    res.status(500).json({ status: 'error', message: `Failed to process task: ${error.message}` });
+    logger.error(`Error processing task ${inputId}:`, { inputId, errorMessage: error.message, stack: error.stack });
+    res.status(500).json({ status: 'error', message: `Failed to process task ${inputId}: ${error.message}` });
   }
 });
 

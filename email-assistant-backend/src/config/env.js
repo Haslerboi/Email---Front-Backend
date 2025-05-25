@@ -29,6 +29,11 @@ export const config = {
     apiKey: process.env.OPENAI_API_KEY,
   },
   
+  // Google Gemini API Configuration (New)
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY,
+  },
+  
   // GMAIL POLLING CONFIG
   GMAIL_CHECK_INTERVAL_MS: process.env.GMAIL_CHECK_INTERVAL_MS, // e.g., 60000 for 1 minute
   GMAIL_INITIAL_DELAY_MS: process.env.GMAIL_INITIAL_DELAY_MS,   // e.g., 5000 for 5 seconds
@@ -63,6 +68,15 @@ export const validateApiKeyFormats = () => {
     );
   }
 
+  // Validate Gemini API key format (Basic length check, Gemini keys vary)
+  if (process.env.GEMINI_API_KEY && 
+      (process.env.GEMINI_API_KEY.length < 30)) {
+    validationResults.isValid = false;
+    validationResults.issues.push(
+      'GEMINI_API_KEY seems too short.'
+    );
+  }
+
   return validationResults;
 };
 
@@ -73,6 +87,7 @@ export const validateEnv = () => {
     'GMAIL_CLIENT_SECRET',
     'GMAIL_REFRESH_TOKEN',
     'OPENAI_API_KEY',
+    'GEMINI_API_KEY',
   ];
   
   let requiredEnvVars = [...baseRequiredEnvVars];
