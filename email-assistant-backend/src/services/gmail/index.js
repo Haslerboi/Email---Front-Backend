@@ -200,7 +200,7 @@ const createDraft = async (threadId, to, subject, messageText) => {
 export const checkForNewEmails = async () => {
   logger.info('checkForNewEmails: Starting process.', {tag: 'gmailService'});
   try {
-    const emails = await fetchUnreadEmails(5); 
+    const emails = await fetchUnreadEmails(5);
     if (!emails || !emails.length) {
       logger.info('checkForNewEmails: No new unread emails to process.', {tag: 'gmailService'});
       return;
@@ -241,10 +241,16 @@ export const checkForNewEmails = async () => {
         const taskData = {
           originalEmail: sanitizedEmail,
           questions: questionsForTask,
-          category: geminiResult.category, // Store category for later use
-          // draftWithQuestionsTemplate can be omitted if not directly used by frontend for this task type anymore
+          category: geminiResult.category, 
           status: 'pending_input' 
         };
+        // Deep log of taskData being saved
+        try {
+            logger.info('Detailed taskData to be saved:', {tag: 'gmailService', taskDataForSave: JSON.parse(JSON.stringify(taskData)) });
+        } catch (logError) {
+            logger.error('Error during deep logging taskDataForSave:', {tag: 'gmailService', logError});
+            logger.info('Simplified taskData to be saved (due to logging error):', {tag: 'gmailService', originalEmailSubject: taskData.originalEmail?.subject, numQuestions: taskData.questions?.length, category: taskData.category });
+        }
         await TaskStateManager.addTask(taskData);
         logger.info(`Task created for email "${sanitizedEmail.subject}".`, {tag: 'gmailService'});
 
@@ -256,12 +262,12 @@ export const checkForNewEmails = async () => {
           const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
           
           if (draftResult && draftResult.replyText) {
-            await createDraft(
+          await createDraft(
               sanitizedEmail.threadId,
               sanitizedEmail.sender,
-              sanitizedEmail.subject,
-              draftResult.replyText
-            );
+            sanitizedEmail.subject, 
+            draftResult.replyText
+          );
             logger.info(`Auto-drafted reply saved for email "${sanitizedEmail.subject}" using category '${geminiResult.category}'`, {tag: 'gmailService'});
             await markAsRead(sanitizedEmail.id); // Mark as read after successful auto-draft
           } else {

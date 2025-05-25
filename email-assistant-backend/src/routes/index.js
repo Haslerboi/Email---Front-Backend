@@ -83,12 +83,20 @@ router.post('/process-answered-email/:inputId', async (req, res) => {
 
   try {
     const task = TaskStateManager.getTask(inputId);
+    // Deep log of the fetched task object
+    try {
+        logger.info(`Fetched task object for ID ${inputId}:`, {tag: 'routes', fetchedTask: JSON.parse(JSON.stringify(task)) });
+    } catch (logError) {
+        logger.error('Error during deep logging fetchedTask:', {tag: 'routes', logError});
+        logger.info(`Simplified fetched task for ID ${inputId} (due to logging error):`, {tag: 'routes', taskId: task?.id, hasOriginalEmail: !!task?.originalEmail, numQuestions: task?.questions?.length, category: task?.category });
+    }
+
     if (!task) {
       logger.warn(`Task ${inputId} not found for processing answers.`);
       return res.status(404).json({ status: 'error', message: `Task ${inputId} not found.` });
     }
     if (!task.originalEmail || !task.questions || !task.category) {
-        logger.error(`Task ${inputId} is missing critical data (originalEmail, questions, or category).`, { task });
+        logger.error(`Task ${inputId} is missing critical data (originalEmail, questions, or category). ROUTE LEVEL CHECK.`, { taskDetailsForError: { id: task.id, hasEmail: !!task.originalEmail, hasQuestions: !!task.questions, category: task.category } });
         return res.status(500).json({ status: 'error', message: 'Task data is incomplete.' });
     }
 
