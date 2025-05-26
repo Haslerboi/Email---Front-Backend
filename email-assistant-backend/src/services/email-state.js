@@ -64,6 +64,17 @@ const TaskStateManager = {
         logger.warn('Attempted to add invalid task data', { tag: 'task-state', taskData });
       return null;
     }
+    // Prevent duplicate tasks for the same email unless the latest message has changed
+    const duplicate = Array.from(tasks.values()).find(
+      t =>
+        t.originalEmail &&
+        t.originalEmail.id === taskData.originalEmail.id &&
+        (t.originalEmail.body === taskData.originalEmail.body || t.originalEmail.snippet === taskData.originalEmail.snippet)
+    );
+    if (duplicate) {
+      logger.info('Duplicate task detected (same email and content), not adding again.', { tag: 'task-state', subject: taskData.originalEmail.subject });
+      return duplicate;
+    }
     const taskId = taskData.id || uuidv4();
     const taskToAdd = { ...taskData, id: taskId, createdAt: new Date().toISOString() };
     tasks.set(taskId, taskToAdd);
