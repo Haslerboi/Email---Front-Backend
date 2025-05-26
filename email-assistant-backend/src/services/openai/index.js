@@ -45,12 +45,22 @@ const fallbackClassification = (text) => {
   const needsInput = needsInputPatterns.some(pattern => pattern.test(text)) || 
                     questions.length > 0 ||
                     text.includes('?');
+  // New fallback logic for four categories
+  let category = 'General';
+  if (/wedding/i.test(text) && /enquiry|inquiry|form|website/i.test(text)) {
+    category = 'Wedding Enquiry';
+  } else if (/wedding/i.test(text)) {
+    category = 'Wedding General';
+  } else if (/(price|pricing|quote|cost|rate|package|budget)/i.test(text) && !/wedding/i.test(text)) {
+    category = 'Quote Pricing questions';
+  }
   return {
     classification: needsInput ? 'needs_input' : 'auto_draft',
     questions: questions.map(q => q.trim()),
     reasoning: needsInput ? 
       "Contains specific questions or requests that require custom information" : 
       "Can be handled with general information",
+    category,
     timestamp: new Date().toISOString()
   };
 };
@@ -84,9 +94,7 @@ export const classifyEmailForPhotographer = async (text) => {
     }
     try {
       const prompt = `
-You are an assistant for a photographer and video business. Given this email, decide whether a reply can be drafted using general information and templates ('auto_draft'), or if the assistant should ask the user for specific answers first ('needs_input'). Also extract any clear questions the email contains.
-
-Classify this email based on whether the assistant can draft a helpful reply using general knowledge and past examples, or if it needs the human to provide more information first.
+You are an assistant for a photographer and video business. Given this email, classify it into one of the following categories: "General" (default if it doesn't fit others), "Wedding Enquiry" (ONLY for initial wedding website enquiries), "Wedding General" (anything wedding related that is NOT the initial website form), or "Quote Pricing questions" (excluding wedding emails). Also, decide whether a reply can be drafted using general information and templates ('auto_draft'), or if the assistant should ask the user for specific answers first ('needs_input'). Also extract any clear questions the email contains.
 
 EMAIL:
 """
@@ -96,6 +104,7 @@ ${text}
 Respond with ONLY valid JSON, no code blocks or formatting, in this exact format:
 {
   "classification": "auto_draft" or "needs_input",
+  "category": "General" | "Wedding Enquiry" | "Wedding General" | "Quote Pricing questions",
   "questions": ["extracted question 1", "extracted question 2", ...],
   "reasoning": "brief explanation of why this classification was chosen"
 }`;
@@ -130,6 +139,7 @@ Respond with ONLY valid JSON, no code blocks or formatting, in this exact format
       }
       return {
         classification: parsedResult.classification || 'needs_input',
+        category: parsedResult.category || 'General',
         questions: Array.isArray(parsedResult.questions) ? parsedResult.questions : [],
         reasoning: parsedResult.reasoning || 'No reasoning provided',
         timestamp: new Date().toISOString()

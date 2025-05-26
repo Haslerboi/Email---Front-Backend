@@ -58,24 +58,55 @@ export const triageAndCategorizeEmail = async (emailBody) => {
     generationConfig: { responseMimeType: "application/json" } 
   });
 
-  const prompt = `Analyze the following email content. The email body may contain a full thread history. Focus your analysis primarily on the newest message in the thread (usually at the top or the part not obviously quoted from a previous email). Provide your analysis ONLY in a valid JSON format, with no markdown code blocks or other formatting. The JSON object must have the following fields:
+  const prompt = `You are analyzing an email for a photographer/videographer business. The email content may contain a full conversation thread with multiple messages.
 
-1.  "isSpamOrUnimportant": boolean. Based on the newest message, set to true if the email is clear spam, a trivial notification, an out-of-office auto-reply, or clearly doesn't require a reply from the business owner. Otherwise, set to false.
+IMPORTANT: Follow these steps in order:
 
-2.  "category": string. Based on the newest message, categorize the email into one of: "Wedding Enquiry", "Main Website Enquiry", or "Other".
+STEP 1 - SPAM/UNIMPORTANT CHECK (analyze the entire thread):
+Examine the full email thread to determine if this is spam or unimportant. Mark as spam/unimportant if it is:
+- Clear spam, phishing, or promotional content
+- Automated notifications (unless from critical senders: no-reply@studioninja.app, notifications@pixiesetmail.com, form-submission@squarespace.info)
+- Out-of-office auto-replies
+- Messages that clearly don't require any business response
 
-3.  "questionsFromSender": array of strings. Carefully analyze the newest message in the email body and extract any direct questions the SENDER of THAT LATEST MESSAGE has explicitly asked. List each distinct question as a string in the array. If the latest sender asked no direct questions, this must be an empty array []. Do NOT invent questions the sender didn't ask, and do not extract questions from older, quoted parts of the email thread.
+STEP 2 - CATEGORIZATION (analyze the entire thread context):
+If not spam/unimportant, look at the ENTIRE email thread to understand the context. Use sender information as a strong hint:
+- If sender is no-reply@studioninja.app, it is a "Wedding Enquiry".
+- If sender is notifications@pixiesetmail.com, it could be "General" or other types; analyze content carefully.
+Categorize into one of these:
+- "General": Default category for emails that don't fit others
+- "Wedding Enquiry": ONLY for initial wedding photography/videography inquiries (typically from website forms, especially no-reply@studioninja.app)
+- "Wedding General": Any wedding-related communication that is NOT an initial inquiry (follow-ups, vendor coordination, etc.)
+- "Quote Pricing questions": Pricing/quote requests that are NOT wedding-related
 
-4.  "needsHumanInput": boolean. Set to true if "isSpamOrUnimportant" is false AND the "questionsFromSender" array (from the latest message) is NOT empty. If "isSpamOrUnimportant" is false and "questionsFromSender" IS empty, set this to false (implying an auto-draft can be attempted).
+STEP 3 - QUESTION EXTRACTION (analyze ONLY the newest message):
+Identify the newest/latest message in the thread (usually at the top, not quoted/indented, or has the latest timestamp if available in headers). 
+From ONLY this latest message, extract any direct questions the sender asked.
+- Only include actual questions the sender explicitly asked
+- Do NOT include questions from older messages in the thread
+- Do NOT invent or infer questions
+- If the latest message contains no questions, return an empty array
 
-5.  "reasoning": string. Briefly explain your decisions, referencing the newest message where possible.
+STEP 4 - DETERMINE IF HUMAN INPUT NEEDED:
+Set needsHumanInput to true if BOTH conditions are met:
+- The email is not spam/unimportant (Step 1 = false)
+- The latest message contains at least one question (Step 3 found questions)
 
-Email Content (may include full thread history):
+Provide your analysis as a JSON object with these exact fields:
+{
+  "isSpamOrUnimportant": boolean,
+  "category": "General" | "Wedding Enquiry" | "Wedding General" | "Quote Pricing questions",
+  "questionsFromSender": ["question 1", "question 2", ...],
+  "needsHumanInput": boolean,
+  "reasoning": "Brief explanation of your analysis, referencing sender and newest message as appropriate"
+}
+
+Email Content to Analyze (includes sender and date headers when available):
 """
-${emailBody}
+${emailBody} 
 """
 
-JSON Response:`;
+Return ONLY valid JSON, no markdown formatting or code blocks.`;
 
   try {
     logger.info('Sending request to Gemini API for refined triage and categorization (focus on latest message)...', { tag: 'geminiService' });
@@ -95,7 +126,7 @@ JSON Response:`;
       isSpamOrUnimportant: isSpam,
       needsHumanInput: typeof parsedResult.needsHumanInput === 'boolean' ? parsedResult.needsHumanInput : determinedNeedsHumanInput,
       questions: questions, 
-      category: ['Wedding Enquiry', 'Main Website Enquiry', 'Other'].includes(parsedResult.category) ? parsedResult.category : 'Other',
+      category: ['General', 'Wedding Enquiry', 'Wedding General', 'Quote Pricing questions'].includes(parsedResult.category) ? parsedResult.category : 'General',
       reasoning: parsedResult.reasoning || 'No reasoning provided by Gemini.'
     };
 

@@ -7,6 +7,8 @@ import { getGuidanceForCategory } from '../templateManager.js';
 import TaskStateManager from '../email-state.js';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../../utils/logger.js';
+import calendarService from '../calendarService.js';
+import chrono from 'chrono-node';
 
 const createOAuth2Client = async () => {
   try {
@@ -86,20 +88,35 @@ const fetchUnreadEmails = async (maxResults = 10) => {
 
     const filteredEmails = emails.filter(email => {
       const sender = email.sender.toLowerCase();
+      const senderNameMatch = email.sender.match(/^"?([^<@"]+)"?\s*<[^@]+@[^>]+>$/); // Extracts name if present
+      const senderNameExists = senderNameMatch && senderNameMatch[1].trim() !== '';
       const content = `${email.subject} ${email.snippet}`.toLowerCase();
-      const whitelist = ['no-reply@studioninja.app', 'notifications@pixiesetmail.com', 'form-submission@squarespace.info'];
-      if (whitelist.some(addr => sender.includes(addr))) return true;
+      // Whitelist: Always process these, even if they look automated, as they are critical forms
+      const criticalFormSenders = ['no-reply@studioninja.app', 'notifications@pixiesetmail.com', 'form-submission@squarespace.info'];
+      if (criticalFormSenders.some(addr => sender.includes(addr))) return true;
 
+      // Blocklist for known transactional/marketing senders that don't need replies
+      const businessBlocklist = [
+        'orders@triumphanddisaster.com', 
+        'service@intl.paypal.com', 
+        'marketing@sba.co.nz',
+        // Add more known business/marketing emails here
+      ];
+      if (businessBlocklist.some(addr => sender.includes(addr))) return false;
+
+      // General no-reply patterns
       const noReplyPatterns = ['noreply@', 'no-reply@', 'mailer@', 'auto@', 'notifications@', 'donotreply@', 'automated@'];
-      if (noReplyPatterns.some(p => sender.includes(p))) return false;
+      if (noReplyPatterns.some(p => sender.includes(p)) && !senderNameExists) return false;
 
-      const domains = ['@google.com', '@apple.com', '@adobe.com', '@garmin.com', '@ird.govt.nz', '@microsoft.com', '@amazonses.com', '@mailchimp.com', '@salesforce.com', '@sendinblue.com', '@sendgrid.net'];
-      if (domains.some(d => sender.endsWith(d))) return false;
+      // Blocklist for generic domains often used for no-reply/automated emails
+      const domainBlocklist = ['@google.com', '@apple.com', '@adobe.com', '@garmin.com', '@ird.govt.nz', '@microsoft.com', '@amazonses.com', '@mailchimp.com', '@salesforce.com', '@sendinblue.com', '@sendgrid.net'];
+      if (domainBlocklist.some(d => sender.endsWith(d)) && !senderNameExists) return false;
 
-      const keywords = ['receipt', 'invoice', 'newsletter', 'password reset', 'subscription', 'confirm your email', 'account update', 'new login', 'security alert', 'payment confirmation', 'shipping update', 'order confirmation', 'verify your', 'welcome to', 'invitation to', 'activation', 'reminder:', 'weekly update', 'monthly update'];
-      if (keywords.some(k => content.includes(k))) return false;
+      // Blocklist for keywords indicating non-essential emails
+      const keywordBlocklist = ['receipt', 'invoice', 'newsletter', 'password reset', 'subscription', 'confirm your email', 'account update', 'new login', 'security alert', 'payment confirmation', 'shipping update', 'order confirmation', 'verify your', 'welcome to', 'invitation to', 'activation', 'reminder:', 'weekly update', 'monthly update'];
+      if (keywordBlocklist.some(k => content.includes(k)) && !senderNameExists) return false;
 
-      return true;
+      return true; // Default to processing if no exclusionary rules match
     });
 
     return filteredEmails.slice(0, maxResults);
@@ -197,6 +214,19 @@ const createDraft = async (threadId, to, subject, messageText) => {
   }
 };
 
+// Utility to detect and extract availability questions and dates
+function extractAvailabilityQuestions(questions) {
+  return questions
+    .map(q => {
+      const date = chrono.parseDate(q);
+      if (date && /availab|free|booked|busy|schedule|date|when/i.test(q)) {
+        return { question: q, date };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
 export const checkForNewEmails = async () => {
   logger.info('checkForNewEmails: Starting process.', {tag: 'gmailService'});
   try {
@@ -232,28 +262,66 @@ export const checkForNewEmails = async () => {
       }
 
       if (geminiResult.needsHumanInput) {
-        logger.info(`Email "${sanitizedEmail.subject}" requires human input. Creating task.`, {tag: 'gmailService'});
-        const questionsForTask = (geminiResult.questions || []).map((qText) => ({
-          id: uuidv4(),
-          text: qText
-        }));
-
-        const taskData = {
-          originalEmail: sanitizedEmail,
-          questions: questionsForTask,
-          category: geminiResult.category, 
-          status: 'pending_input' 
-        };
-        // Deep log of taskData being saved
-        try {
-            logger.info('Detailed taskData to be saved:', {tag: 'gmailService', taskDataForSave: JSON.parse(JSON.stringify(taskData)) });
-        } catch (logError) {
-            logger.error('Error during deep logging taskDataForSave:', {tag: 'gmailService', logError});
-            logger.info('Simplified taskData to be saved (due to logging error):', {tag: 'gmailService', originalEmailSubject: taskData.originalEmail?.subject, numQuestions: taskData.questions?.length, category: taskData.category });
+        // Separate availability questions from others
+        const allQuestions = geminiResult.questions || [];
+        const availabilityQs = extractAvailabilityQuestions(allQuestions);
+        const otherQuestions = allQuestions.filter(q => !availabilityQs.some(aq => aq.question === q));
+        let availabilityAnswers = [];
+        // For each availability question, check calendar and prepare an answer
+        for (const { question, date } of availabilityQs) {
+          try {
+            // Check for the whole day
+            const start = new Date(date);
+            start.setHours(0,0,0,0);
+            const end = new Date(date);
+            end.setHours(23,59,59,999);
+            const isAvailable = await calendarService.checkAvailability({ start, end });
+            availabilityAnswers.push({
+              question,
+              answer: isAvailable
+                ? `Yes, I am available on ${start.toDateString()}.`
+                : `Sorry, I am already booked on ${start.toDateString()}.`
+            });
+          } catch (err) {
+            availabilityAnswers.push({
+              question,
+              answer: "I'm unable to check my calendar right now. Please check back later."
+            });
+          }
         }
-        await TaskStateManager.addTask(taskData);
-        logger.info(`Task created for email "${sanitizedEmail.subject}".`, {tag: 'gmailService'});
-
+        // If there are other questions, require user input for those
+        if (otherQuestions.length > 0) {
+          const questionsForTask = otherQuestions.map((qText) => ({
+            id: uuidv4(),
+            text: qText
+          }));
+          const taskData = {
+            originalEmail: sanitizedEmail,
+            questions: questionsForTask,
+            category: geminiResult.category,
+            status: 'pending_input',
+            autoAnswers: availabilityAnswers // store auto-answered availability Qs for later use
+          };
+          await TaskStateManager.addTask(taskData);
+          logger.info(`Task created for email "${sanitizedEmail.subject}" (user input needed for non-availability questions, auto-answered availability questions).`, {tag: 'gmailService'});
+        } else if (availabilityAnswers.length > 0) {
+          // Only availability questions, auto-draft reply
+          const systemGuide = await getGuidanceForCategory(geminiResult.category);
+          // Compose a reply using the auto-answers
+          const replyText = availabilityAnswers.map(a => a.answer).join('\n');
+          const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide + '\n' + replyText);
+          if (draftResult && draftResult.replyText) {
+            await createDraft(
+              sanitizedEmail.threadId,
+              sanitizedEmail.sender,
+              sanitizedEmail.subject,
+              draftResult.replyText
+            );
+            logger.info(`Auto-drafted reply saved for email "${sanitizedEmail.subject}" (availability only).`, {tag: 'gmailService'});
+            await markAsRead(sanitizedEmail.id);
+          }
+        }
+        // If neither, fallback to original logic (should not happen)
       } else { // No human input needed, attempt auto-draft
         logger.info(`Email "${sanitizedEmail.subject}" does not need human input. Attempting auto-draft. Category: ${geminiResult.category}`, {tag: 'gmailService'});
         try {

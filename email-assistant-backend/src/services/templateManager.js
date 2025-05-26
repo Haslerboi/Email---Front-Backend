@@ -9,9 +9,10 @@ const __dirname = path.dirname(__filename);
 const templatesDir = path.join(__dirname, '../templates');
 
 const templateFileMap = {
+  'General': 'general_enquiry_guide.md',
   'Wedding Enquiry': 'wedding_enquiry_guide.md',
-  'Main Website Enquiry': 'main_website_enquiry_guide.md',
-  'Other': 'other_enquiry_guide.md',
+  'Wedding General': 'wedding_general_guide.md',
+  'Quote Pricing questions': 'quote_pricing_guide.md',
   'default': 'default_guide.md' // Fallback
 };
 
