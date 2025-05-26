@@ -8,7 +8,7 @@ import TaskStateManager from '../email-state.js';
 import { v4 as uuidv4 } from 'uuid';
 import logger from '../../utils/logger.js';
 import calendarService from '../calendarService.js';
-import chrono from 'chrono-node';
+import * as chrono from 'chrono-node';
 
 const createOAuth2Client = async () => {
   try {
