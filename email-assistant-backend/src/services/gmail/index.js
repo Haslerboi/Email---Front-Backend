@@ -594,14 +594,16 @@ export const checkForNewEmails = async () => {
                 sanitizedEmail.subject,
                 draftResult.replyText
               );
-              logger.info(`Draft created for email "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
-              await markAsRead(sanitizedEmail.id);
+              logger.info(`Draft created for email "${sanitizedEmail.subject}" - keeping original email unread for user review`, {tag: 'gmailService'});
+              // NOTE: Intentionally NOT marking as read so user can see the original email
+              // The email is already marked as processed to prevent duplicate drafts
             } else {
-              logger.warn('Failed to generate draft reply', {tag: 'gmailService', emailId: sanitizedEmail.id});
-              await markAsRead(sanitizedEmail.id); // Mark as read even if draft failed
+              logger.warn('Failed to generate draft reply - keeping email unread for manual handling', {tag: 'gmailService', emailId: sanitizedEmail.id});
+              // NOTE: Not marking as read so user can handle manually
             }
           } catch (draftError) {
-            logger.error('Error processing Draft Email:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: draftError.message});
+            logger.error('Error processing Draft Email - keeping unread for manual handling:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: draftError.message});
+            // NOTE: Not marking as read so user can handle the error case manually
           }
           break;
 
@@ -657,11 +659,12 @@ export const checkForNewEmails = async () => {
             const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
             if (draftResult && draftResult.replyText) {
               await createDraft(sanitizedEmail.threadId, sanitizedEmail.sender, sanitizedEmail.subject, draftResult.replyText);
+              logger.info(`Draft created for unknown category email - keeping unread for user review`, {tag: 'gmailService'});
             }
-            await markAsRead(sanitizedEmail.id);
+            // NOTE: Not marking as read so user can see and handle unknown category emails
           } catch (defaultError) {
-            logger.error('Error in default case processing:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: defaultError.message});
-            await markAsRead(sanitizedEmail.id); // Mark as read even if processing failed
+            logger.error('Error in default case processing - keeping unread for manual handling:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: defaultError.message});
+            // NOTE: Not marking as read so user can handle the error case manually
           }
           break;
       }
