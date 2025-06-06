@@ -7,7 +7,26 @@ let genAI;
 if (config.gemini && config.gemini.apiKey) {
   try {
     genAI = new GoogleGenerativeAI(config.gemini.apiKey);
-    logger.info('Gemini API client initialized successfully', { tag: 'geminiService' });
+    logger.info('Gemini API client initialized successfully', { 
+      tag: 'geminiService',
+      apiKeyLength: config.gemini.apiKey.length,
+      apiKeyPrefix: config.gemini.apiKey.substring(0, 8) + '***'
+    });
+    
+    // Test the API with a simple request
+    (async () => {
+      try {
+        const testModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const testResult = await testModel.generateContent("Test connection - respond with just 'OK'");
+        logger.info('Gemini API test successful', { tag: 'geminiService' });
+      } catch (testError) {
+        logger.error('Gemini API test failed:', { 
+          error: testError.message, 
+          tag: 'geminiService' 
+        });
+      }
+    })();
+    
   } catch (initError) {
     logger.error('Failed to initialize Gemini API client:', { 
       error: initError.message, 
@@ -55,27 +74,48 @@ export const categorizeEmail = async (emailBody, senderEmail) => {
       senderEmail: senderEmail
     });
     
-    // Fallback categorization logic
-    const emailContent = `${emailBody}`.toLowerCase();
+    // Enhanced fallback categorization logic
+    const emailContent = `${emailBody} ${senderEmail}`.toLowerCase();
     
-    // Simple keyword-based categorization
-    if (emailContent.includes('invoice') || emailContent.includes('bill') || emailContent.includes('payment')) {
+    // Check for invoices/billing first
+    if (emailContent.includes('invoice') || emailContent.includes('bill') || emailContent.includes('payment') || 
+        emailContent.includes('statement') || emailContent.includes('receipt')) {
       return {
         category: 'Invoices',
         reasoning: 'Fallback categorization: Contains invoice/billing keywords'
       };
     }
     
-    if (emailContent.includes('unsubscribe') || emailContent.includes('newsletter') || emailContent.includes('marketing')) {
+    // Check for promotional/marketing content
+    const spamKeywords = [
+      'unsubscribe', 'newsletter', 'marketing', 'promotion', 'sale', 'discount', 
+      'offer', 'deal', 'shop now', 'buy now', 'limited time', 'exclusive',
+      'click here', 'free shipping', 'save', 'off', '%', 'weekly update',
+      'monthly update', 'blog post', 'new article', 'subscribe', 'follow us',
+      'social media', 'instagram', 'facebook', 'twitter'
+    ];
+    
+    const hasSpamKeywords = spamKeywords.some(keyword => emailContent.includes(keyword));
+    
+    // Check sender patterns that indicate promotional emails
+    const promotionalSenders = [
+      'newsletter', 'marketing', 'promo', 'noreply', 'no-reply', 'info@', 
+      'hello@', 'news@', 'updates@', 'support@', 'team@'
+    ];
+    
+    const isPromotionalSender = promotionalSenders.some(pattern => senderEmail.includes(pattern));
+    
+    if (hasSpamKeywords || isPromotionalSender) {
       return {
         category: 'Spam',
-        reasoning: 'Fallback categorization: Contains marketing/spam keywords'
+        reasoning: 'Fallback categorization: Contains promotional/marketing content or sender patterns'
       };
     }
     
+    // Default to Draft Email only for legitimate-looking emails
     return {
       category: 'Draft Email',
-      reasoning: 'Fallback categorization: Gemini API not available, defaulting to Draft Email for safety.'
+      reasoning: 'Fallback categorization: Appears to be legitimate business email, defaulting to Draft Email.'
     };
   }
 
@@ -103,59 +143,74 @@ export const categorizeEmail = async (emailBody, senderEmail) => {
 
   const prompt = `You are analyzing an email for a photographer/videographer business. The email content may contain a full conversation thread with multiple messages.
 
-Your task is to categorize the email into ONE of these four categories:
+Your task is to categorize the email into ONE of these three categories EXACTLY as written:
 
-1. "Draft Email" - Legitimate emails that require a thoughtful response (inquiries, client communications, business requests, etc.)
-2. "Invoices" - Any invoice-related emails, billing statements, payment requests, financial documents
-3. "Spam" - Promotional emails, marketing, newsletters, automated notifications, obvious spam, phishing attempts
-4. "Whitelisted Spam" - (This category is handled separately by whitelist logic, don't assign this)
+**REQUIRED CATEGORIES (choose one exactly):**
+- "Draft Email"
+- "Invoices" 
+- "Spam"
 
-CATEGORIZATION GUIDELINES:
+**CATEGORIZATION RULES:**
 
-"Draft Email" - Use for:
+**"Draft Email"** - Use for legitimate business communications:
 - Client inquiries about photography/videography services
 - Business communications requiring response
 - Personal emails from known contacts
 - Booking requests, project discussions
+- Wedding inquiries and consultations
 - Any legitimate email that needs attention
 
-"Invoices" - Use for:
+**"Invoices"** - Use for financial/billing emails:
 - Bills, invoices, payment requests
 - Financial statements, receipts
 - Accounting-related emails
 - Subscription billing emails
 
-"Spam" - Use for:
+**"Spam"** - Use for promotional/marketing content:
 - Marketing emails, promotions, newsletters
 - Automated notifications (social media, apps, etc.)
-- Obvious spam or phishing attempts
 - Mass marketing campaigns
-- Unsubscribe confirmations
+- Emails with "unsubscribe" links
 - System notifications that don't require action
+- Obvious spam or phishing attempts
 
-IMPORTANT: When in doubt between "Draft Email" and "Spam", lean towards "Draft Email" to avoid missing important business communications.
+**CRITICAL:** 
+- You MUST use one of these exact category names: "Draft Email", "Invoices", or "Spam"
+- When unsure between "Draft Email" and "Spam", choose "Draft Email"
+- Do NOT create new category names
 
-Analyze the email content below and provide your categorization:
-
-Email Content:
+**Email to categorize:**
 Sender: ${senderEmail}
 Body: ${emailBody}
 
-Return ONLY valid JSON with this exact structure:
+**Response format (use exactly this structure):**
 {
   "category": "Draft Email" | "Invoices" | "Spam",
   "reasoning": "Brief explanation of why this category was chosen"
 }`;
 
   try {
-    logger.info('Sending request to Gemini API for new categorization system...', { tag: 'geminiService' });
+    logger.info('Sending request to Gemini API for new categorization system...', { 
+      tag: 'geminiService',
+      senderEmail: senderEmail,
+      emailBodyLength: emailBody ? emailBody.length : 0
+    });
+    
     const result = await model.generateContent(prompt);
     const response = result.response;
     const responseText = response.text();
     
-    logger.info('Received response from Gemini API.', { tag: 'geminiService' });
+    logger.info('Received response from Gemini API.', { 
+      tag: 'geminiService',
+      responseLength: responseText ? responseText.length : 0
+    });
+    
     const parsedResult = extractJsonFromGeminiResponse(responseText);
-    logger.info('Successfully parsed Gemini response.', { tag: 'geminiService', parsedResult });
+    logger.info('Successfully parsed Gemini response.', { 
+      tag: 'geminiService', 
+      category: parsedResult.category,
+      reasoning: parsedResult.reasoning 
+    });
 
     // Validate category
     const validCategories = ['Draft Email', 'Invoices', 'Spam'];

@@ -187,11 +187,11 @@ const moveBackToInbox = async (messageId, fromLabelName) => {
 const fetchUnreadEmails = async (maxResults = 10) => {
   try {
     const gmail = await getGmailClient();
-    console.log(`Gmail Service - Fetching unread emails`);
+    console.log(`Gmail Service - Fetching unread emails from main inbox only`);
 
     const listResponse = await gmail.users.messages.list({
       userId: 'me',
-      q: 'is:unread in:inbox',
+      q: 'is:unread in:inbox -category:promotions -category:social -category:spam -category:forums -category:updates',
       maxResults: maxResults
     });
 
@@ -234,12 +234,48 @@ const fetchUnreadEmails = async (maxResults = 10) => {
       })
     );
 
-    return emails;
-  } catch (error) {
-    console.error('Error in Gmail service:', error);
-    throw new Error('Failed to fetch emails: ' + error.message);
-  }
-};
+          // Additional filtering to exclude promotional emails that might slip through
+      const filteredEmails = emails.filter(email => {
+        const sender = email.sender.toLowerCase();
+        const subject = email.subject.toLowerCase();
+        const content = `${subject} ${email.snippet}`.toLowerCase();
+        
+        // Block obvious promotional senders
+        const promotionalPatterns = [
+          'newsletter', 'marketing', 'promo', 'hello@', 'info@', 'news@', 
+          'updates@', 'team@', 'support@'
+        ];
+        
+        // Block promotional keywords in subject/content
+        const promotionalKeywords = [
+          'unsubscribe', 'sale', 'discount', 'offer', 'deal', 'shop now',
+          'limited time', 'exclusive', 'free shipping', 'newsletter'
+        ];
+        
+        const hasPromotionalSender = promotionalPatterns.some(pattern => sender.includes(pattern));
+        const hasPromotionalContent = promotionalKeywords.some(keyword => content.includes(keyword));
+        
+        if (hasPromotionalSender || hasPromotionalContent) {
+          logger.info(`Filtering out promotional email: "${email.subject}" from ${email.sender}`, {
+            tag: 'gmailService',
+            reason: hasPromotionalSender ? 'promotional sender' : 'promotional content'
+          });
+          return false;
+        }
+        
+        return true;
+      });
+
+      logger.info(`Fetched ${emails.length} emails, filtered to ${filteredEmails.length} legitimate emails`, {
+        tag: 'gmailService'
+      });
+      
+      return filteredEmails;
+    } catch (error) {
+      console.error('Error in Gmail service:', error);
+      throw new Error('Failed to fetch emails: ' + error.message);
+    }
+  };
 
 const markAsRead = async (messageId) => {
   try {
@@ -417,7 +453,24 @@ export const checkForNewEmails = async () => {
       // Process based on category
       switch (geminiResult.category) {
         case 'Draft Email':
-          logger.info(`Processing Draft Email: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
+          // Double-check that this isn't actually a promotional email
+          const emailCheck = `${sanitizedEmail.subject} ${sanitizedEmail.body} ${sanitizedEmail.sender}`.toLowerCase();
+          const suspiciousKeywords = ['unsubscribe', 'newsletter', 'marketing', 'promotion', 'sale', 'offer', 'deal'];
+          const isSuspicious = suspiciousKeywords.some(keyword => emailCheck.includes(keyword));
+          
+          if (isSuspicious) {
+            logger.warn(`Reclassifying suspicious "Draft Email" as Spam: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
+            try {
+              await moveToLabel(sanitizedEmail.id, 'Email Prison');
+              await markAsRead(sanitizedEmail.id);
+              logger.info(`Moved suspicious email to Email Prison`, {tag: 'gmailService'});
+            } catch (moveError) {
+              logger.error('Error moving suspicious email to spam:', {tag: 'gmailService', error: moveError.message});
+            }
+            break;
+          }
+          
+          logger.info(`Processing legitimate Draft Email: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
           try {
             // Get system guide for draft emails
             const systemGuide = await getGuidanceForCategory('Draft Email');

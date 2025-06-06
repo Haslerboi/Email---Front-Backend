@@ -10,6 +10,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "check-env": "node check-railway-env.js",
     "setup-railway": "node setup-railway-env.js",
+    "test-gemini": "node test-gemini.js",
     "railway-deploy": "npm run check-env && npm start"
   },
   "keywords": [
