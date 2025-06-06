@@ -18,7 +18,7 @@ router.get('/', (req, res) => {
       'whitelist-add': '/api/whitelist/add',
       'whitelist-remove': '/api/whitelist/remove',
       'processed-emails': '/api/processed-emails',
-      'processed-emails-clear': '/api/processed-emails/clear'
+      'processed-emails-clear': '/api/processed-emails/clear (POST - resets all processed emails)'
     },
     categories: [
       'Draft Email - Automatic draft creation for legitimate business emails',
@@ -126,16 +126,21 @@ router.get('/processed-emails', async (req, res) => {
 // POST /api/processed-emails/clear - Clear processed emails (for testing)
 router.post('/processed-emails/clear', async (req, res) => {
   try {
-    // Reset the processed emails service
-    await ProcessedEmailsService.cleanup();
-    logger.info('Manually cleared processed emails cache');
+    const stats = ProcessedEmailsService.getStats();
+    const previousCount = stats.totalProcessed;
+    
+    // Reset the processed emails service (complete clear)
+    await ProcessedEmailsService.reset();
+    logger.info(`API: Manually reset processed emails cache (cleared ${previousCount} entries)`);
     res.json({
       status: 'success',
-      message: 'Processed emails cache cleared successfully'
+      message: `Successfully reset processed emails cache (cleared ${previousCount} entries)`,
+      previousCount: previousCount,
+      currentCount: 0
     });
   } catch (error) {
-    logger.error('Error clearing processed emails:', { error: error.message });
-    res.status(500).json({ status: 'error', message: 'Failed to clear processed emails cache' });
+    logger.error('Error resetting processed emails:', { error: error.message });
+    res.status(500).json({ status: 'error', message: 'Failed to reset processed emails cache' });
   }
 });
 

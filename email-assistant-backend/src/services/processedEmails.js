@@ -146,6 +146,22 @@ const ProcessedEmailsService = {
       lastCheckTime: lastCheckTime ? lastCheckTime.toISOString() : null,
       timeSinceLastCheck: lastCheckTime ? Date.now() - lastCheckTime.getTime() : null
     };
+  },
+
+  /**
+   * Reset all processed emails (complete clear)
+   * @returns {Promise<void>}
+   */
+  reset: async () => {
+    const previousSize = processedEmails.size;
+    processedEmails = new Set();
+    lastCheckTime = new Date();
+    await saveProcessedEmailsToFile();
+    
+    logger.info(`Reset processed emails: cleared ${previousSize} entries`, { 
+      tag: 'processedEmails',
+      previousSize: previousSize
+    });
   }
 };
 
