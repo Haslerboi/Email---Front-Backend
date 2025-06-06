@@ -115,12 +115,15 @@ export const categorizeEmail = async (emailBody, senderEmail) => {
     // Check for notification patterns
     const notificationKeywords = [
       'notification', 'alert', 'update', 'report', 'summary', 'status',
-      'backup completed', 'system', 'automated', 'no-reply', 'noreply'
+      'backup completed', 'system', 'automated', 'no-reply', 'noreply',
+      'deployment', 'crashed', 'failed', 'build', 'deploy', 'server',
+      'uptime', 'downtime', 'incident', 'maintenance'
     ];
     
     const notificationSenders = [
       'github', 'slack', 'trello', 'dropbox', 'google drive', 'icloud',
-      'aws', 'microsoft', 'adobe', 'zoom', 'calendly'
+      'aws', 'microsoft', 'adobe', 'zoom', 'calendly', 'railway',
+      'heroku', 'vercel', 'netlify', 'cloudflare'
     ];
     
     const hasNotificationKeywords = notificationKeywords.some(keyword => emailContent.includes(keyword));
