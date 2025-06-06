@@ -186,7 +186,7 @@ const moveBackToInbox = async (messageId, fromLabelName) => {
   }
 };
 
-const fetchUnreadEmails = async (maxResults = 10, newerThanMinutes = 5) => {
+const fetchUnreadEmails = async (maxResults = 5, newerThanMinutes = 5) => {
   try {
     const gmail = await getGmailClient();
     
@@ -196,15 +196,24 @@ const fetchUnreadEmails = async (maxResults = 10, newerThanMinutes = 5) => {
     const newerThanTimestamp = Math.floor(newerThanTime.getTime() / 1000);
     
     console.log(`Gmail Service - Fetching emails newer than ${newerThanMinutes} minutes from primary inbox (excluding promotions/social only)`);
+    
+    // Use Unix timestamp for more precise filtering
+    const afterTimestamp = Math.floor(newerThanTime.getTime() / 1000);
+    console.log(`Using after:${afterTimestamp} for emails newer than ${newerThanTime.toISOString()}`);
 
     const listResponse = await gmail.users.messages.list({
       userId: 'me',
-      q: `is:unread in:inbox -category:promotions -category:social newer_than:${newerThanMinutes}m`,
+      q: `is:unread in:inbox -category:promotions -category:social after:${afterTimestamp}`,
       maxResults: maxResults
     });
 
     const messages = listResponse.data.messages || [];
-    if (!messages.length) return [];
+    if (!messages.length) {
+      console.log(`Gmail API returned 0 messages for query: after:${afterTimestamp}`);
+      return [];
+    }
+
+    console.log(`Gmail API returned ${messages.length} messages (expected: emails newer than ${newerThanTime.toISOString()}), fetching full data...`);
 
     const emails = await Promise.all(
       messages.map(async (message) => {
@@ -263,10 +272,22 @@ const fetchUnreadEmails = async (maxResults = 10, newerThanMinutes = 5) => {
         return isRecent;
       });
 
-      logger.info(`Fetched ${emails.length} emails, filtered to ${recentEmails.length} recent emails (newer than ${newerThanMinutes} minutes)`, {
-        tag: 'gmailService',
-        cutoffTime: cutoffTime.toISOString()
-      });
+      // Log the efficiency of Gmail's server-side filtering
+      const filteredOutCount = emails.length - recentEmails.length;
+      if (filteredOutCount > 0) {
+        logger.warn(`Gmail server-side filtering inefficient: returned ${emails.length} emails, had to filter out ${filteredOutCount} old emails client-side`, {
+          tag: 'gmailService',
+          gmailReturnedCount: emails.length,
+          clientFilteredCount: filteredOutCount,
+          finalCount: recentEmails.length,
+          cutoffTime: cutoffTime.toISOString()
+        });
+      } else {
+        logger.info(`Gmail filtering efficient: returned ${emails.length} emails, all were recent (newer than ${newerThanMinutes} minutes)`, {
+          tag: 'gmailService',
+          cutoffTime: cutoffTime.toISOString()
+        });
+      }
       
       return recentEmails;
     } catch (error) {
@@ -480,7 +501,7 @@ export const checkForNewEmails = async () => {
   
   try {
     // Fetch emails newer than 5 minutes to avoid reprocessing old emails
-    const emails = await fetchUnreadEmails(5, 5);
+    const emails = await fetchUnreadEmails(3, 5); // Reduced from 5 to 3 for efficiency
     if (!emails || !emails.length) {
       logger.info('checkForNewEmails: No new unread emails to process.', {tag: 'gmailService'});
       return;
