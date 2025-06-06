@@ -236,18 +236,38 @@ const fetchUnreadEmails = async (maxResults = 10, newerThanMinutes = 5) => {
           snippet: email.snippet,
           body: decodedBody,
           labels: email.labelIds || [],
-          isRead: !(email.labelIds || []).includes('UNREAD')
+          isRead: !(email.labelIds || []).includes('UNREAD'),
+          internalDate: new Date(parseInt(email.internalDate)) // Gmail's internal timestamp
         };
       })
     );
 
-      // No additional pre-filtering - let Gemini AI handle all categorization
-      // Gmail's built-in filters already excluded promotions and social categories
-      logger.info(`Fetched ${emails.length} emails from primary inbox for Gemini processing`, {
-        tag: 'gmailService'
+      // Additional client-side date filtering to ensure we only process recent emails
+      const cutoffTime = new Date();
+      cutoffTime.setMinutes(cutoffTime.getMinutes() - newerThanMinutes);
+      
+      const recentEmails = emails.filter(email => {
+        const emailDate = email.internalDate || new Date(email.date);
+        const isRecent = emailDate > cutoffTime;
+        
+        if (!isRecent) {
+          logger.warn(`Filtering out old email: "${email.subject}" from ${email.sender} (Date: ${emailDate.toISOString()}, Cutoff: ${cutoffTime.toISOString()})`, {
+            tag: 'gmailService',
+            emailId: email.id,
+            emailDate: emailDate.toISOString(),
+            cutoffTime: cutoffTime.toISOString()
+          });
+        }
+        
+        return isRecent;
+      });
+
+      logger.info(`Fetched ${emails.length} emails, filtered to ${recentEmails.length} recent emails (newer than ${newerThanMinutes} minutes)`, {
+        tag: 'gmailService',
+        cutoffTime: cutoffTime.toISOString()
       });
       
-      return emails;
+      return recentEmails;
     } catch (error) {
       console.error('Error in Gmail service:', error);
       throw new Error('Failed to fetch emails: ' + error.message);
@@ -407,7 +427,19 @@ export const checkForNewEmails = async () => {
     }
 
     // Filter out emails that have already been processed
-    const newEmails = emails.filter(email => !ProcessedEmailsService.isProcessed(email.id));
+    const newEmails = emails.filter(email => {
+      const isProcessed = ProcessedEmailsService.isProcessed(email.id);
+      if (isProcessed) {
+        const emailDate = email.internalDate || new Date(email.date);
+        const ageMinutes = Math.round((Date.now() - emailDate.getTime()) / (1000 * 60));
+        logger.debug(`Skipping already processed email: "${email.subject}" (Age: ${ageMinutes} minutes)`, {
+          tag: 'gmailService',
+          emailId: email.id,
+          ageMinutes: ageMinutes
+        });
+      }
+      return !isProcessed;
+    });
     
     if (newEmails.length === 0) {
       logger.info(`checkForNewEmails: Found ${emails.length} emails but all were already processed.`, {tag: 'gmailService'});
@@ -417,7 +449,15 @@ export const checkForNewEmails = async () => {
     logger.info(`checkForNewEmails: Processing ${newEmails.length} new emails (filtered from ${emails.length} total)`, {tag: 'gmailService'});
 
     for (const email of newEmails) {
-      logger.info(`Processing New Email: "${email.subject}" from ${email.sender}`, {tag: 'gmailService', emailId: email.id });
+      const emailDate = email.internalDate || new Date(email.date);
+      const ageMinutes = Math.round((Date.now() - emailDate.getTime()) / (1000 * 60));
+      
+      logger.info(`Processing New Email: "${email.subject}" from ${email.sender} (Age: ${ageMinutes} minutes, Date: ${emailDate.toISOString()})`, {
+        tag: 'gmailService', 
+        emailId: email.id,
+        emailDate: emailDate.toISOString(),
+        ageMinutes: ageMinutes
+      });
       
       // Mark as processed AND read immediately to prevent duplicate processing
       await ProcessedEmailsService.markAsProcessed(email.id);
