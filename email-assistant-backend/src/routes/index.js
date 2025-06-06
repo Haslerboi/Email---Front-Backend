@@ -4,6 +4,7 @@ import { getApiStatus } from '../services/apiStatus.js';
 import { getAllWhitelistedSenders, addWhitelistedSender, removeWhitelistedSender } from '../services/whitelistService.js';
 import ProcessedEmailsService from '../services/processedEmails.js';
 import PendingNotificationsService from '../services/pendingNotifications.js';
+import { categorizeEmail } from '../services/geminiService.js';
 import logger from '../utils/logger.js';
 
 const router = Router();
@@ -20,7 +21,8 @@ router.get('/', (req, res) => {
       'whitelist-remove': '/api/whitelist/remove',
       'processed-emails': '/api/processed-emails',
       'processed-emails-clear': '/api/processed-emails/clear (POST - resets all processed emails)',
-      'pending-notifications': '/api/pending-notifications'
+      'pending-notifications': '/api/pending-notifications',
+      'test-gemini': '/api/test-gemini (POST - test Gemini categorization)'
     },
     categories: [
       'Draft Email - Automatic draft creation for legitimate business emails',
@@ -158,6 +160,43 @@ router.get('/pending-notifications', async (req, res) => {
   } catch (error) {
     logger.error('Error fetching pending notifications stats:', { error: error.message, stack: error.stack });
     res.status(500).json({ status: 'error', message: 'Failed to retrieve pending notifications stats' });
+  }
+});
+
+// POST /api/test-gemini - Test Gemini categorization
+router.post('/test-gemini', async (req, res) => {
+  try {
+    const { emailBody, senderEmail } = req.body;
+    
+    // Use default test data if not provided
+    const testEmailBody = emailBody || "Hello, I'm interested in your photography services for my wedding in July. Could you please send me your pricing and availability? Thank you!";
+    const testSenderEmail = senderEmail || "bride@example.com";
+    
+    logger.info(`Testing Gemini categorization for: ${testSenderEmail}`, { tag: 'testGemini' });
+    
+    const result = await categorizeEmail(testEmailBody, testSenderEmail);
+    
+    res.json({
+      status: 'success',
+      testData: {
+        emailBody: testEmailBody,
+        senderEmail: testSenderEmail
+      },
+      result: result,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    logger.error('Error in Gemini test endpoint:', { 
+      error: error.message, 
+      stack: error.stack,
+      tag: 'testGemini'
+    });
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'Failed to test Gemini categorization',
+      error: error.message
+    });
   }
 });
 

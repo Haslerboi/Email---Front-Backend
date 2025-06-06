@@ -157,10 +157,32 @@ export const categorizeEmail = async (emailBody, senderEmail) => {
     };
   }
 
-  const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.0-flash",
-    generationConfig: { responseMimeType: "application/json" } 
-  });
+  // Try to get the model with fallback
+  let model;
+  try {
+    model = genAI.getGenerativeModel({ 
+      model: "gemini-2.0-flash",
+      generationConfig: { responseMimeType: "application/json" } 
+    });
+  } catch (modelError) {
+    logger.warn('Failed to get gemini-2.0-flash, trying gemini-1.5-pro as fallback', { 
+      tag: 'geminiService',
+      error: modelError.message
+    });
+    try {
+      model = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-pro",
+        generationConfig: { responseMimeType: "application/json" } 
+      });
+    } catch (fallbackError) {
+      logger.error('Both gemini models failed to initialize', { 
+        tag: 'geminiService',
+        primaryError: modelError.message,
+        fallbackError: fallbackError.message
+      });
+      throw new Error(`Model initialization failed: ${modelError.message}, fallback also failed: ${fallbackError.message}`);
+    }
+  }
 
   const prompt = `You are analyzing an email for a photographer/videographer business. The email content may contain a full conversation thread with multiple messages.
 
@@ -251,13 +273,34 @@ Body: ${emailBody}
     };
 
   } catch (error) {
-    logger.error('Error calling Gemini API or processing its response:', { 
-        tag: 'geminiService', 
-        errorMessage: error.message,
-        stack: error.stack,
-        senderEmail: senderEmail,
-        emailBodyLength: emailBody ? emailBody.length : 0
-    });
+    // Enhanced error logging for better debugging
+    const errorDetails = {
+      tag: 'geminiService',
+      errorMessage: error.message,
+      errorName: error.name,
+      errorCode: error.code,
+      stack: error.stack,
+      senderEmail: senderEmail,
+      emailBodyLength: emailBody ? emailBody.length : 0,
+      hasGenAI: !!genAI,
+      apiKeyLength: config.gemini?.apiKey ? config.gemini.apiKey.length : 0
+    };
+
+    // Check for specific error types
+    if (error.message.includes('API_KEY')) {
+      logger.error('Gemini API Key error - check configuration:', errorDetails);
+    } else if (error.message.includes('QUOTA') || error.message.includes('quota')) {
+      logger.error('Gemini API Quota exceeded:', errorDetails);
+    } else if (error.message.includes('RATE_LIMIT') || error.message.includes('rate')) {
+      logger.error('Gemini API Rate limit hit:', errorDetails);
+    } else if (error.message.includes('model')) {
+      logger.error('Gemini Model error - check model availability:', errorDetails);
+    } else if (error.message.includes('network') || error.message.includes('timeout')) {
+      logger.error('Gemini Network/timeout error:', errorDetails);
+    } else {
+      logger.error('Unknown Gemini API error:', errorDetails);
+    }
+
     return {
       category: 'Draft Email',
       reasoning: `Gemini API error: ${error.message}, defaulting to Draft Email for safety.`
