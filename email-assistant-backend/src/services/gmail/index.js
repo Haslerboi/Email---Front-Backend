@@ -2,7 +2,7 @@
 import { config } from '../../config/env.js';
 import { google } from 'googleapis';
 import { classifyEmailForPhotographer, generateReply as openAIGenerateReply, generateGuidedReply } from '../openai/index.js';
-import { triageAndCategorizeEmail as geminiTriageAndCategorize } from '../geminiService.js';
+import { categorizeEmail } from '../geminiService.js';
 import { getGuidanceForCategory } from '../templateManager.js';
 import TaskStateManager from '../email-state.js';
 import { v4 as uuidv4 } from 'uuid';
