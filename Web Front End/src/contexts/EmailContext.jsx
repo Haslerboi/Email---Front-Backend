@@ -48,7 +48,7 @@ export function EmailProvider({ children }) {
       
       // Simulate completion for now as no actual calls are made that would set loading to false otherwise
       console.log('EmailContext: Mock data loading complete (fetches disabled).');
-
+      
     } catch (err) {
       console.error('EmailContext: Error in (disabled) fetchAllData:', err);
       setError('An error occurred (fetches disabled).');

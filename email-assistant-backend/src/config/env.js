@@ -13,7 +13,7 @@ dotenv.config({ path: join(dirname(__dirname), '..', '.env') });
 // Configuration object with all environment variables
 export const config = {
   // Server configuration
-  PORT: process.env.PORT || 3000,
+  PORT: process.env.PORT || (process.env.RAILWAY_ENVIRONMENT ? 8080 : 3000),
   NODE_ENV: process.env.NODE_ENV || 'development',
   
   // Gmail API configuration

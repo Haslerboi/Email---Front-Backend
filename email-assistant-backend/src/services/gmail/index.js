@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import logger from '../../utils/logger.js';
 import calendarService from '../calendarService.js';
 import * as chrono from 'chrono-node';
+import { addWhitelistedSender } from '../whitelistService.js';
 
 const createOAuth2Client = async () => {
   try {
@@ -36,15 +37,162 @@ const getGmailClient = async () => {
   }
 };
 
+/**
+ * Get or create a Gmail label
+ * @param {string} labelName - The name of the label to get or create
+ * @returns {Promise<string>} - The label ID
+ */
+const getOrCreateLabel = async (labelName) => {
+  try {
+    const gmail = await getGmailClient();
+    
+    // First, try to find existing label
+    const labelsResponse = await gmail.users.labels.list({ userId: 'me' });
+    const existingLabel = labelsResponse.data.labels.find(label => label.name === labelName);
+    
+    if (existingLabel) {
+      logger.info(`Found existing label: ${labelName} (ID: ${existingLabel.id})`, { tag: 'gmailService' });
+      return existingLabel.id;
+    }
+    
+    // Create new label if it doesn't exist
+    const createResponse = await gmail.users.labels.create({
+      userId: 'me',
+      requestBody: {
+        name: labelName,
+        labelListVisibility: 'labelShow',
+        messageListVisibility: 'show'
+      }
+    });
+    
+    logger.info(`Created new label: ${labelName} (ID: ${createResponse.data.id})`, { tag: 'gmailService' });
+    return createResponse.data.id;
+  } catch (error) {
+    logger.error(`Error getting/creating label ${labelName}:`, { 
+      error: error.message, 
+      stack: error.stack,
+      tag: 'gmailService' 
+    });
+    throw new Error(`Failed to get/create label ${labelName}: ${error.message}`);
+  }
+};
+
+/**
+ * Move an email to a specific label/folder
+ * @param {string} messageId - The message ID to move
+ * @param {string} labelName - The label name to move to
+ * @returns {Promise<void>}
+ */
+const moveToLabel = async (messageId, labelName) => {
+  try {
+    const gmail = await getGmailClient();
+    const labelId = await getOrCreateLabel(labelName);
+    
+    // Add the target label and remove INBOX label
+    await gmail.users.messages.modify({
+      userId: 'me',
+      id: messageId,
+      requestBody: {
+        addLabelIds: [labelId],
+        removeLabelIds: ['INBOX']
+      }
+    });
+    
+    logger.info(`Moved email ${messageId} to label: ${labelName}`, { tag: 'gmailService' });
+  } catch (error) {
+    logger.error(`Error moving email ${messageId} to label ${labelName}:`, { error: error.message, tag: 'gmailService' });
+    throw new Error(`Failed to move email to label: ${error.message}`);
+  }
+};
+
+/**
+ * Fetch emails from a specific label
+ * @param {string} labelName - The label name to fetch from
+ * @param {number} maxResults - Maximum number of emails to fetch
+ * @returns {Promise<Array>} - Array of email objects
+ */
+const fetchEmailsFromLabel = async (labelName, maxResults = 10) => {
+  try {
+    const gmail = await getGmailClient();
+    const labelId = await getOrCreateLabel(labelName);
+    
+    const listResponse = await gmail.users.messages.list({
+      userId: 'me',
+      labelIds: [labelId],
+      maxResults: maxResults
+    });
+
+    const messages = listResponse.data.messages || [];
+    if (!messages.length) return [];
+
+    const emails = await Promise.all(
+      messages.map(async (message) => {
+        const response = await gmail.users.messages.get({ userId: 'me', id: message.id });
+        const email = response.data;
+        const headers = email.payload.headers;
+
+        const getHeader = (name) => {
+          const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());
+          return header ? header.value : '';
+        };
+
+        return {
+          id: email.id,
+          threadId: email.threadId,
+          subject: getHeader('subject'),
+          sender: getHeader('from'),
+          recipient: getHeader('to'),
+          date: getHeader('date'),
+          snippet: email.snippet,
+          labels: email.labelIds || []
+        };
+      })
+    );
+
+    return emails;
+  } catch (error) {
+    logger.error(`Error fetching emails from label ${labelName}:`, { error: error.message, tag: 'gmailService' });
+    throw new Error(`Failed to fetch emails from label: ${error.message}`);
+  }
+};
+
+/**
+ * Move an email back to inbox and mark as read
+ * @param {string} messageId - The message ID to move back
+ * @param {string} fromLabelName - The label to remove the email from
+ * @returns {Promise<void>}
+ */
+const moveBackToInbox = async (messageId, fromLabelName) => {
+  try {
+    const gmail = await getGmailClient();
+    const labelId = await getOrCreateLabel(fromLabelName);
+    
+    // Add INBOX label, remove the source label, and mark as read
+    await gmail.users.messages.modify({
+      userId: 'me',
+      id: messageId,
+      requestBody: {
+        addLabelIds: ['INBOX'],
+        removeLabelIds: [labelId, 'UNREAD']
+      }
+    });
+    
+    logger.info(`Moved email ${messageId} back to inbox from ${fromLabelName} and marked as read`, { tag: 'gmailService' });
+  } catch (error) {
+    logger.error(`Error moving email ${messageId} back to inbox:`, { error: error.message, tag: 'gmailService' });
+    throw new Error(`Failed to move email back to inbox: ${error.message}`);
+  }
+};
+
 const fetchUnreadEmails = async (maxResults = 10) => {
   try {
     const gmail = await getGmailClient();
-    console.log(`Gmail Service - Fetching unread emails with filtering`);
+    console.log(`Gmail Service - Fetching unread emails`);
 
     const listResponse = await gmail.users.messages.list({
       userId: 'me',
-      q: 'is:unread -category:promotions -category:social -category:spam',
-      maxResults: maxResults * 2
+      q: 'is:unread in:inbox',
+      maxResults: maxResults
     });
 
     const messages = listResponse.data.messages || [];
@@ -86,40 +234,7 @@ const fetchUnreadEmails = async (maxResults = 10) => {
       })
     );
 
-    const filteredEmails = emails.filter(email => {
-      const sender = email.sender.toLowerCase();
-      const senderNameMatch = email.sender.match(/^"?([^<@"]+)"?\s*<[^@]+@[^>]+>$/); // Extracts name if present
-      const senderNameExists = senderNameMatch && senderNameMatch[1].trim() !== '';
-      const content = `${email.subject} ${email.snippet}`.toLowerCase();
-      // Whitelist: Always process these, even if they look automated, as they are critical forms
-      const criticalFormSenders = ['no-reply@studioninja.app', 'notifications@pixiesetmail.com', 'form-submission@squarespace.info'];
-      if (criticalFormSenders.some(addr => sender.includes(addr))) return true;
-
-      // Blocklist for known transactional/marketing senders that don't need replies
-      const businessBlocklist = [
-        'orders@triumphanddisaster.com', 
-        'service@intl.paypal.com', 
-        'marketing@sba.co.nz',
-        // Add more known business/marketing emails here
-      ];
-      if (businessBlocklist.some(addr => sender.includes(addr))) return false;
-
-      // General no-reply patterns
-      const noReplyPatterns = ['noreply@', 'no-reply@', 'mailer@', 'auto@', 'notifications@', 'donotreply@', 'automated@'];
-      if (noReplyPatterns.some(p => sender.includes(p)) && !senderNameExists) return false;
-
-      // Blocklist for generic domains often used for no-reply/automated emails
-      const domainBlocklist = ['@google.com', '@apple.com', '@adobe.com', '@garmin.com', '@ird.govt.nz', '@microsoft.com', '@amazonses.com', '@mailchimp.com', '@salesforce.com', '@sendinblue.com', '@sendgrid.net'];
-      if (domainBlocklist.some(d => sender.endsWith(d)) && !senderNameExists) return false;
-
-      // Blocklist for keywords indicating non-essential emails
-      const keywordBlocklist = ['receipt', 'invoice', 'newsletter', 'password reset', 'subscription', 'confirm your email', 'account update', 'new login', 'security alert', 'payment confirmation', 'shipping update', 'order confirmation', 'verify your', 'welcome to', 'invitation to', 'activation', 'reminder:', 'weekly update', 'monthly update'];
-      if (keywordBlocklist.some(k => content.includes(k)) && !senderNameExists) return false;
-
-      return true; // Default to processing if no exclusionary rules match
-    });
-
-    return filteredEmails.slice(0, maxResults);
+    return emails;
   } catch (error) {
     console.error('Error in Gmail service:', error);
     throw new Error('Failed to fetch emails: ' + error.message);
@@ -184,9 +299,6 @@ const createDraft = async (threadId, to, subject, messageText) => {
     
     console.log('Email content constructed, preparing to create draft');
     
-    // Log the raw format for debugging
-    console.log('Raw email content (first 200 chars):', emailContent.substring(0, 200));
-    
     // Create the draft
     console.log('Sending draft creation request to Gmail API...');
     const response = await gmail.users.drafts.create({
@@ -214,21 +326,55 @@ const createDraft = async (threadId, to, subject, messageText) => {
   }
 };
 
-// Utility to detect and extract availability questions and dates
-function extractAvailabilityQuestions(questions) {
-  return questions
-    .map(q => {
-      const date = chrono.parseDate(q);
-      if (date && /availab|free|booked|busy|schedule|date|when/i.test(q)) {
-        return { question: q, date };
+/**
+ * Check for new emails in the 'white' label and process them for whitelisting
+ */
+export const checkWhiteLabelForUpdates = async () => {
+  logger.info('Checking white label for new emails to whitelist...', { tag: 'gmailService' });
+  try {
+    const whiteEmails = await fetchEmailsFromLabel('white', 20);
+    
+    if (!whiteEmails || !whiteEmails.length) {
+      logger.info('No emails found in white label', { tag: 'gmailService' });
+      return;
+    }
+
+    for (const email of whiteEmails) {
+      logger.info(`Processing email from white label: ${email.sender}`, { tag: 'gmailService' });
+      
+      try {
+        // Add sender to whitelist
+        await addWhitelistedSender(email.sender);
+        
+        // Move email back to inbox and mark as read
+        await moveBackToInbox(email.id, 'white');
+        
+        logger.info(`Successfully processed white label email from ${email.sender}`, { tag: 'gmailService' });
+      } catch (emailError) {
+        logger.error(`Error processing individual email from white label:`, { 
+          emailId: email.id, 
+          sender: email.sender,
+          error: emailError.message,
+          tag: 'gmailService' 
+        });
       }
-      return null;
-    })
-    .filter(Boolean);
-}
+    }
+  } catch (error) {
+    // Don't log as error if it's just that the white label doesn't exist yet
+    if (error.message.includes('Failed to get/create label white')) {
+      logger.info('White label does not exist yet, will be created when first email is added', { tag: 'gmailService' });
+    } else {
+      logger.error('Error processing white label emails:', { 
+        error: error.message, 
+        stack: error.stack,
+        tag: 'gmailService' 
+      });
+    }
+  }
+};
 
 export const checkForNewEmails = async () => {
-  logger.info('checkForNewEmails: Starting process.', {tag: 'gmailService'});
+  logger.info('checkForNewEmails: Starting process with new categorization system.', {tag: 'gmailService'});
   try {
     const emails = await fetchUnreadEmails(5);
     if (!emails || !emails.length) {
@@ -239,8 +385,6 @@ export const checkForNewEmails = async () => {
     for (const email of emails) {
       logger.info(`Processing New Email: "${email.subject}" from ${email.sender}`, {tag: 'gmailService', emailId: email.id });
       
-      // await markAsRead(email.id); // Keep commented for testing if needed, uncomment for production
-
       const sanitizedEmail = {
         id: email.id,
         threadId: email.threadId,
@@ -251,101 +395,95 @@ export const checkForNewEmails = async () => {
         date: email.date || new Date().toISOString()
       };
       
-      logger.info('Calling Gemini for triage and categorization...', {tag: 'gmailService', emailId: sanitizedEmail.id});
-      const geminiResult = await geminiTriageAndCategorize(sanitizedEmail.body);
-      logger.info('Gemini Result:', {tag: 'gmailService', emailId: sanitizedEmail.id, geminiResult});
-
-      if (geminiResult.isSpamOrUnimportant) {
-        logger.info(`Email "${sanitizedEmail.subject}" marked as spam/unimportant by Gemini. Ending workflow.`, {tag: 'gmailService'});
-        await markAsRead(sanitizedEmail.id); // Mark as read if spam/unimportant
-        continue; // Move to the next email
+      logger.info('Calling Gemini for email categorization...', {tag: 'gmailService', emailId: sanitizedEmail.id});
+      let geminiResult;
+      try {
+        geminiResult = await categorizeEmail(sanitizedEmail.body, sanitizedEmail.sender);
+        logger.info('Gemini categorization result:', {tag: 'gmailService', emailId: sanitizedEmail.id, category: geminiResult.category});
+      } catch (categorizationError) {
+        logger.error('Failed to categorize email, using fallback:', {
+          tag: 'gmailService', 
+          emailId: sanitizedEmail.id,
+          error: categorizationError.message,
+          stack: categorizationError.stack
+        });
+        // Fallback to Draft Email for safety
+        geminiResult = {
+          category: 'Draft Email',
+          reasoning: 'Categorization failed, treating as Draft Email for safety'
+        };
       }
 
-      if (geminiResult.needsHumanInput) {
-        // Separate availability questions from others
-        const allQuestions = geminiResult.questions || [];
-        const availabilityQs = extractAvailabilityQuestions(allQuestions);
-        const otherQuestions = allQuestions.filter(q => !availabilityQs.some(aq => aq.question === q));
-        let availabilityAnswers = [];
-        // For each availability question, check calendar and prepare an answer
-        for (const { question, date } of availabilityQs) {
+      // Process based on category
+      switch (geminiResult.category) {
+        case 'Draft Email':
+          logger.info(`Processing Draft Email: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
           try {
-            // Check for the whole day
-            const start = new Date(date);
-            start.setHours(0,0,0,0);
-            const end = new Date(date);
-            end.setHours(23,59,59,999);
-            const isAvailable = await calendarService.checkAvailability({ start, end });
-            availabilityAnswers.push({
-              question,
-              answer: isAvailable
-                ? `Yes, I am available on ${start.toDateString()}.`
-                : `Sorry, I am already booked on ${start.toDateString()}.`
-            });
-          } catch (err) {
-            availabilityAnswers.push({
-              question,
-              answer: "I'm unable to check my calendar right now. Please check back later."
-            });
+            // Get system guide for draft emails
+            const systemGuide = await getGuidanceForCategory('Draft Email');
+            
+            // Generate reply using OpenAI
+            const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
+            
+            if (draftResult && draftResult.replyText) {
+              // Create draft in Gmail
+              await createDraft(
+                sanitizedEmail.threadId,
+                sanitizedEmail.sender,
+                sanitizedEmail.subject,
+                draftResult.replyText
+              );
+              logger.info(`Draft created for email "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
+              await markAsRead(sanitizedEmail.id);
+            } else {
+              logger.warn('Failed to generate draft reply', {tag: 'gmailService', emailId: sanitizedEmail.id});
+            }
+          } catch (draftError) {
+            logger.error('Error processing Draft Email:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: draftError.message});
           }
-        }
-        // If there are other questions, require user input for those
-        if (otherQuestions.length > 0) {
-          const questionsForTask = otherQuestions.map((qText) => ({
-            id: uuidv4(),
-            text: qText
-          }));
-          const taskData = {
-            originalEmail: sanitizedEmail,
-            questions: questionsForTask,
-            category: geminiResult.category,
-            status: 'pending_input',
-            autoAnswers: availabilityAnswers // store auto-answered availability Qs for later use
-          };
-          await TaskStateManager.addTask(taskData);
-          logger.info(`Task created for email "${sanitizedEmail.subject}" (user input needed for non-availability questions, auto-answered availability questions).`, {tag: 'gmailService'});
-        } else if (availabilityAnswers.length > 0) {
-          // Only availability questions, auto-draft reply
-          const systemGuide = await getGuidanceForCategory(geminiResult.category);
-          // Compose a reply using the auto-answers
-          const replyText = availabilityAnswers.map(a => a.answer).join('\n');
-          const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide + '\n' + replyText);
+          break;
+
+        case 'Invoices':
+          logger.info(`Moving invoice email to Invoices folder: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
+          try {
+            await moveToLabel(sanitizedEmail.id, 'Invoices');
+            logger.info(`Successfully moved invoice email to Invoices folder`, {tag: 'gmailService'});
+          } catch (invoiceError) {
+            logger.error('Error moving invoice email:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: invoiceError.message});
+          }
+          break;
+
+        case 'Spam':
+          logger.info(`Moving spam email to Email Prison: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
+          try {
+            await moveToLabel(sanitizedEmail.id, 'Email Prison');
+            await markAsRead(sanitizedEmail.id);
+            logger.info(`Successfully moved spam email to Email Prison`, {tag: 'gmailService'});
+          } catch (spamError) {
+            logger.error('Error moving spam email:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: spamError.message});
+          }
+          break;
+
+        case 'Whitelisted Spam':
+          logger.info(`Marking whitelisted spam as read: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
+          try {
+            await markAsRead(sanitizedEmail.id);
+            logger.info(`Successfully marked whitelisted spam as read`, {tag: 'gmailService'});
+          } catch (whitelistError) {
+            logger.error('Error processing whitelisted spam:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: whitelistError.message});
+          }
+          break;
+
+        default:
+          logger.warn(`Unknown category "${geminiResult.category}", treating as Draft Email`, {tag: 'gmailService'});
+          // Fallback to Draft Email processing
+          const systemGuide = await getGuidanceForCategory('Draft Email');
+          const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
           if (draftResult && draftResult.replyText) {
-            await createDraft(
-              sanitizedEmail.threadId,
-              sanitizedEmail.sender,
-              sanitizedEmail.subject,
-              draftResult.replyText
-            );
-            logger.info(`Auto-drafted reply saved for email "${sanitizedEmail.subject}" (availability only).`, {tag: 'gmailService'});
+            await createDraft(sanitizedEmail.threadId, sanitizedEmail.sender, sanitizedEmail.subject, draftResult.replyText);
             await markAsRead(sanitizedEmail.id);
           }
-        }
-        // If neither, fallback to original logic (should not happen)
-      } else { // No human input needed, attempt auto-draft
-        logger.info(`Email "${sanitizedEmail.subject}" does not need human input. Attempting auto-draft. Category: ${geminiResult.category}`, {tag: 'gmailService'});
-        try {
-          const systemGuide = await getGuidanceForCategory(geminiResult.category);
-          // Use the original openaiService.generateReply for auto-drafts, passing the guide
-          const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
-          
-          if (draftResult && draftResult.replyText) {
-          await createDraft(
-              sanitizedEmail.threadId,
-              sanitizedEmail.sender,
-            sanitizedEmail.subject, 
-            draftResult.replyText
-          );
-            logger.info(`Auto-drafted reply saved for email "${sanitizedEmail.subject}" using category '${geminiResult.category}'`, {tag: 'gmailService'});
-            await markAsRead(sanitizedEmail.id); // Mark as read after successful auto-draft
-          } else {
-            logger.warn('Auto-draft generation failed to produce reply text.', {tag: 'gmailService', emailId: sanitizedEmail.id });
-            // Optionally, create a task here if auto-draft fails significantly
-          }
-        } catch (draftError) {
-          logger.error('Error during auto-draft process:', {tag: 'gmailService', emailId: sanitizedEmail.id, draftError});
-          // Optionally, create a task for manual review if auto-draft errors out
-        }
+          break;
       }
     }
   } catch (error) {
@@ -359,5 +497,9 @@ export {
   getGmailClient,
   fetchUnreadEmails,
   markAsRead,
-  createDraft
+  createDraft,
+  getOrCreateLabel,
+  moveToLabel,
+  fetchEmailsFromLabel,
+  moveBackToInbox
 };

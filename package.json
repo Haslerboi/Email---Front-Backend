@@ -14,12 +14,19 @@
     "type": "git",
     "url": "git+https://github.com/Haslerboi/Email---Front-Backend.git"
   },
-  "keywords": ["monorepo", "email", "assistant"],
+  "keywords": [
+    "monorepo",
+    "email",
+    "assistant"
+  ],
   "author": "Your Name",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/Haslerboi/Email---Front-Backend/issues"
   },
   "homepage": "https://github.com/Haslerboi/Email---Front-Backend#readme",
-  "description": "Monorepo for Email Assistant frontend and backend."
+  "description": "Monorepo for Email Assistant frontend and backend.",
+  "dependencies": {
+    "chrono-node": "^2.6.2"
+  }
 }

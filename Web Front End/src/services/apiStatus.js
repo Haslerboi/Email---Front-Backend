@@ -12,14 +12,14 @@ export const checkApiStatus = async () => {
     // Only check a single, reliable backend endpoint like /status or the root
     // The baseURL in api.js is /api, so '/status' becomes /api/status
     const response = await api.get('/status', { timeout: 20000 }); 
-    if (response.status === 200) {
+        if (response.status === 200) {
       isBackendAvailable = true;
       backendUrl = '/api/status'; // Reflecting the full path hit
       console.log('ApiStatus: Backend /api/status is available.');
     } else {
       console.log('ApiStatus: Backend /api/status returned status:', response.status);
-    }
-  } catch (error) {
+        }
+      } catch (error) {
     console.warn('ApiStatus: Error checking backend /api/status:', error.message);
   }
 
@@ -36,7 +36,7 @@ export const checkApiStatus = async () => {
     }
     // Add other key endpoints here if needed later, but keep checks minimal
   };
-
+  
   return {
     available: isBackendAvailable,
     endpoints: endpointDetails // Simplified details

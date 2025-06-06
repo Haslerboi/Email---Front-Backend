@@ -43,9 +43,33 @@ export async function getApiStatus() {
     allHealthy = false;
   }
 
+  // Check Gemini API Key 
+  try {
+    const config = (await import('../config/env.js')).config;
+    if (config.gemini && config.gemini.apiKey) {
+      details.geminiConfig = { available: true, status: 'API key configured' };
+    } else {
+      throw new Error('Gemini API key not configured');
+    }
+  } catch (error) {
+    logger.error('Error checking Gemini config in apiStatus:', error);
+    details.geminiConfig = { available: false, error: error.message };
+    allHealthy = false;
+  }
+
+  // Add environment information
+  details.environment = {
+    nodeEnv: process.env.NODE_ENV || 'development',
+    port: process.env.PORT || 3000,
+    isRailway: !!process.env.RAILWAY_ENVIRONMENT,
+    railwayService: process.env.RAILWAY_SERVICE_NAME || 'unknown'
+  };
+
   return {
     status: allHealthy ? 'connected' : 'degraded',
-    message: allHealthy ? 'API is healthy and configured' : 'One or more API subsystems have issues or are not configured',
+    message: allHealthy ? 'API is healthy and configured - New Categorization System v2.0' : 'One or more API subsystems have issues or are not configured',
+    version: '2.0.0',
+    categories: ['Draft Email', 'Invoices', 'Spam', 'Whitelisted Spam'],
     details
   };
 } 

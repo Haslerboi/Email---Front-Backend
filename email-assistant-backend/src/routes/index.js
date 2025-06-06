@@ -1,39 +1,30 @@
 // Main router that combines all route modules
 import { Router } from 'express';
-// import smsRoutes from './sms.js'; // To be removed
-// import telegramRoutes from './telegram.js'; // To be removed
 import { getApiStatus } from '../services/apiStatus.js';
-import TaskStateManager from '../services/email-state.js'; // Updated import name
-// import { generateReplyFromContext } from '../services/openai/index.js'; // Old function
-import { generateGuidedReply } from '../services/openai/index.js'; // New function
-import { getGuidanceForCategory } from '../services/templateManager.js'; // Import template manager
-import { createDraft } from '../services/gmail/index.js'; // Import createDraft
-import logger from '../utils/logger.js'; // Ensure logger is imported if not already
+import { getAllWhitelistedSenders, addWhitelistedSender, removeWhitelistedSender } from '../services/whitelistService.js';
+import logger from '../utils/logger.js';
 
 const router = Router();
 
 // Welcome route
 router.get('/', (req, res) => {
   res.json({
-    message: 'Welcome to the Email Assistant API',
-    version: '1.0.0',
+    message: 'Welcome to the Email Assistant API - New Categorization System',
+    version: '2.0.0',
     endpoints: {
-      // sms: '/api/sms', // Removed
-      // telegram: '/api/telegram', // Removed
       status: '/api/status',
-      emails_needing_input: '/api/emails-needing-input', // Corrected name
-      process_answered_email: '/api/process-answered-email/:inputId'
+      whitelist: '/api/whitelist',
+      'whitelist-add': '/api/whitelist/add',
+      'whitelist-remove': '/api/whitelist/remove'
     },
+    categories: [
+      'Draft Email - Automatic draft creation for legitimate business emails',
+      'Invoices - Automatic filing to Invoices folder',
+      'Spam - Automatic move to Email Prison',
+      'Whitelisted Spam - Mark as read, keep in inbox'
+    ]
   });
 });
-
-// Mount route modules
-// router.use('/sms', smsRoutes); // Removed
-// router.use('/telegram', telegramRoutes); // Removed
-
-// Future route modules will be mounted here
-// router.use('/emails', emailRoutes); // This was old, we'll add specific new ones
-// router.use('/auth', authRoutes); // Auth still not implemented
 
 router.get('/status', async (req, res) => {
   try {
@@ -44,125 +35,74 @@ router.get('/status', async (req, res) => {
   }
 });
 
-// This existing /emails endpoint will be replaced or removed.
-// For now, let's comment it out to avoid conflict with the new one we plan.
-/*
-router.get('/emails', (req, res) => {
+// GET /api/whitelist - Get all whitelisted senders
+router.get('/whitelist', async (req, res) => {
   try {
-    const emails = EmailStateManager.listActiveEmails();
-    res.json({ emails });
-  } catch (error) {
-    res.status(500).json({ status: 'error', message: error.message });
-  }
-});
-*/
-
-// GET /api/emails-needing-input endpoint
-router.get('/emails-needing-input', (req, res) => {
-  try {
-    const tasks = TaskStateManager.listPendingTasks();
-    // Ensure the response structure matches frontend expectations
-    // The frontend mock data for an item is: { id, originalEmail, draftWithQuestionsTemplate, questions }
-    // TaskStateManager stores the full task object which should be compatible.
-    res.json(tasks); 
-  } catch (error) {
-    logger.error('Error fetching emails needing input:', { error: error.message, stack: error.stack });
-    res.status(500).json({ status: 'error', message: 'Failed to retrieve tasks' });
-  }
-});
-
-// POST /api/process-answered-email/:inputId endpoint
-router.post('/process-answered-email/:inputId', async (req, res) => {
-  const { inputId } = req.params;
-  const frontendAnswers = req.body.answers;
-
-  if (!frontendAnswers) {
-    logger.warn(`Answers not provided for task ${inputId}.`);
-    return res.status(400).json({ status: 'error', message: 'Answers not provided.' });
-  }
-  logger.info(`Processing answers for task ${inputId}`, { inputId /*, frontendAnswers */ }); // Avoid logging potentially large answers object by default
-
-  try {
-    const task = TaskStateManager.getTask(inputId);
-    try {
-        logger.info(`Fetched task object for ID ${inputId}:`, {tag: 'routes', fetchedTask: task ? JSON.parse(JSON.stringify(task)) : null });
-    } catch (logError) {
-        logger.error('Error during deep logging fetchedTask:', {tag: 'routes', logError});
-        logger.info(`Simplified fetched task for ID ${inputId} (due to logging error):`, {tag: 'routes', taskId: task?.id, hasOriginalEmail: !!task?.originalEmail, numQuestions: task?.questions?.length, category: task?.category });
-    }
-
-    if (!task) {
-      logger.warn(`Task ${inputId} not found for processing answers.`);
-      return res.status(404).json({ status: 'error', message: `Task ${inputId} not found.` });
-    }
-    if (!task.originalEmail || !task.questions || !task.category) {
-        logger.error(`Task ${inputId} is missing critical data (originalEmail, questions, or category). ROUTE LEVEL CHECK.`, { taskDetailsForError: { id: task.id, hasEmail: !!task.originalEmail, hasQuestions: !!task.questions, category: task.category } });
-        return res.status(500).json({ status: 'error', message: 'Task data is incomplete.' });
-    }
-
-    const preparedAnsweredQuestions = task.questions.map(q => ({
-      questionText: q.text,
-      userAnswer: frontendAnswers[q.id] || 'No answer provided'
-    }));
-
-    logger.info(`Fetching guide for category: ${task.category}`, { inputId });
-    const systemGuide = await getGuidanceForCategory(task.category);
-    if (!systemGuide || systemGuide.includes("Please provide a helpful")) {
-        logger.warn(`Could not load a valid system guide for category ${task.category} for task ${inputId}. Using basic fallback or problem with template content.`, { inputId, systemGuidePreview: systemGuide?.substring(0,100) });
-    }
-
-    logger.info(`Generating guided reply for task ${inputId} using GPT-4.1 (or similar premium model).`, { inputId });
-    const replyText = await generateGuidedReply(systemGuide, task.originalEmail, preparedAnsweredQuestions);
-
-    if (!replyText || replyText.includes('(Error communicating with AI assistant)') || replyText.includes('(OpenAI key not configured)')){
-      logger.error(`Failed to generate reply text from OpenAI for task ${inputId}. Reply was: ${replyText}`, { inputId });
-      return res.status(500).json({ status: 'error', message: 'Failed to generate reply from AI. Task not processed.' });
-    }
-
-    logger.info(`Reply generated for task ${inputId}. Attempting to create draft in Gmail.`, { inputId });
-    await createDraft(
-      task.originalEmail.threadId,
-      task.originalEmail.sender,
-      task.originalEmail.subject,
-      replyText
-    );
-    logger.info(`Gmail draft created for task ${inputId}.`, { inputId });
-
-    await TaskStateManager.removeTask(inputId);
-    logger.info(`Task ${inputId} processed and removed successfully.`, { inputId });
-
+    const whitelistedSenders = getAllWhitelistedSenders();
     res.json({
-      message: `Answers for task ${inputId} processed. Email draft created in Gmail.`,
-      nextStep: 'Review the draft in your Gmail drafts folder.'
+      status: 'success',
+      count: whitelistedSenders.length,
+      senders: whitelistedSenders
     });
-
   } catch (error) {
-    // New, more explicit logging for errors in this route
-    logger.error(`--- ERROR PROCESSING TASK ${inputId} ---`);
-    logger.error(`Error Message: ${error.message}`);
-    logger.error(`Error Stack: ${error.stack}`);
-    logger.error(`Associated Task ID: ${inputId}`);
-    logger.error(`--- END ERROR DETAILS ---`);
-    res.status(500).json({ status: 'error', message: `Failed to process task ${inputId}: ${error.message}` });
+    logger.error('Error fetching whitelisted senders:', { error: error.message, stack: error.stack });
+    res.status(500).json({ status: 'error', message: 'Failed to retrieve whitelisted senders' });
   }
 });
 
-// DELETE /api/tasks/:taskId endpoint (New)
-router.delete('/tasks/:taskId', async (req, res) => {
-  const { taskId } = req.params;
-  logger.info(`Backend: Received request to delete task ${taskId}`);
+// POST /api/whitelist/add - Add a sender to whitelist
+router.post('/whitelist/add', async (req, res) => {
+  const { senderEmail } = req.body;
+  
+  if (!senderEmail) {
+    return res.status(400).json({ status: 'error', message: 'senderEmail is required' });
+  }
+  
   try {
-    const removed = await TaskStateManager.removeTask(taskId);
-    if (removed) {
-      logger.info(`Task ${taskId} deleted successfully from backend.`);
-      res.status(200).json({ message: `Task ${taskId} deleted successfully.` });
+    const added = await addWhitelistedSender(senderEmail);
+    if (added) {
+      logger.info(`Manually added sender to whitelist: ${senderEmail}`);
+      res.json({
+        status: 'success',
+        message: `Successfully added ${senderEmail} to whitelist`
+      });
     } else {
-      logger.warn(`Task ${taskId} not found for deletion.`);
-      res.status(404).json({ status: 'error', message: `Task ${taskId} not found.` });
+      res.json({
+        status: 'info',
+        message: `${senderEmail} was already in the whitelist`
+      });
     }
   } catch (error) {
-    logger.error(`Error deleting task ${taskId}:`, { errorMessage: error.message, stack: error.stack });
-    res.status(500).json({ status: 'error', message: `Failed to delete task ${taskId}: ${error.message}` });
+    logger.error('Error adding sender to whitelist:', { error: error.message, senderEmail });
+    res.status(500).json({ status: 'error', message: 'Failed to add sender to whitelist' });
+  }
+});
+
+// DELETE /api/whitelist/remove - Remove a sender from whitelist
+router.delete('/whitelist/remove', async (req, res) => {
+  const { senderEmail } = req.body;
+  
+  if (!senderEmail) {
+    return res.status(400).json({ status: 'error', message: 'senderEmail is required' });
+  }
+  
+  try {
+    const removed = await removeWhitelistedSender(senderEmail);
+    if (removed) {
+      logger.info(`Manually removed sender from whitelist: ${senderEmail}`);
+      res.json({
+        status: 'success',
+        message: `Successfully removed ${senderEmail} from whitelist`
+      });
+    } else {
+      res.status(404).json({
+        status: 'error',
+        message: `${senderEmail} was not found in the whitelist`
+      });
+    }
+  } catch (error) {
+    logger.error('Error removing sender from whitelist:', { error: error.message, senderEmail });
+    res.status(500).json({ status: 'error', message: 'Failed to remove sender from whitelist' });
   }
 });
 
