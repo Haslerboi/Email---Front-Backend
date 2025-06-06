@@ -14,6 +14,8 @@ const templateFileMap = {
   'Spam': 'spam_guide.md',
   'Notifications': 'notifications_guide.md',
   'Whitelisted Spam': 'whitelisted_spam_guide.md',
+  'Studio Ninja Wedding Enquiry': 'studio_ninja_wedding_enquiry_guide.md',
+  'Studio Ninja System': 'studio_ninja_system_guide.md',
   'default': 'default_guide.md' // Fallback
 };
 

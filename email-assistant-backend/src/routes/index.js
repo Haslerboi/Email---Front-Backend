@@ -12,8 +12,8 @@ const router = Router();
 // Welcome route
 router.get('/', (req, res) => {
   res.json({
-    message: 'Welcome to the Email Assistant API - New Categorization System',
-    version: '2.0.0',
+    message: 'Welcome to the Email Assistant API - New Categorization System with Studio Ninja Support',
+    version: '2.1.0',
     endpoints: {
       status: '/api/status',
       whitelist: '/api/whitelist',
@@ -26,6 +26,8 @@ router.get('/', (req, res) => {
     },
     categories: [
       'Draft Email - Automatic draft creation for legitimate business emails',
+      'Studio Ninja Wedding Enquiry - Special handling for wedding enquiries with reply-to field (uses wedding-specific prompt)',
+      'Studio Ninja System - System emails from Studio Ninja without reply-to (mark as read, no processing)',
       'Invoices - Automatic filing to Invoices folder',
       'Spam - Automatic move to Email Prison',
       'Notifications - Stay in inbox for 5 minutes, then move to Notification folder',

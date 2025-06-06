@@ -226,6 +226,12 @@ const fetchUnreadEmails = async (maxResults = 5, newerThanMinutes = 5) => {
           return header ? header.value : '';
         };
 
+        // Extract all headers for Studio Ninja processing
+        const allHeaders = {};
+        headers.forEach(header => {
+          allHeaders[header.name.toLowerCase()] = header.value;
+        });
+
         let decodedBody = email.snippet;
         if (email.payload.body?.data) {
           decodedBody = Buffer.from(email.payload.body.data, 'base64').toString('utf-8');
@@ -242,9 +248,11 @@ const fetchUnreadEmails = async (maxResults = 5, newerThanMinutes = 5) => {
           subject: getHeader('subject'),
           sender: getHeader('from'),
           recipient: getHeader('to'),
+          replyTo: getHeader('reply-to'), // Extract reply-to for Studio Ninja
           date: getHeader('date'),
           snippet: email.snippet,
           body: decodedBody,
+          headers: allHeaders, // Include all headers for categorization
           labels: email.labelIds || [],
           isRead: !(email.labelIds || []).includes('UNREAD'),
           internalDate: new Date(parseInt(email.internalDate)) // Gmail's internal timestamp
@@ -553,13 +561,15 @@ export const checkForNewEmails = async () => {
         body: email.body || '',
         sender: email.sender || '[Unknown Sender]',
         recipient: email.recipient || '',
+        replyTo: email.replyTo || '', // Include reply-to for Studio Ninja
+        headers: email.headers || {}, // Include all headers
         date: email.date || new Date().toISOString()
       };
       
       logger.info('Calling Gemini for email categorization...', {tag: 'gmailService', emailId: sanitizedEmail.id});
       let geminiResult;
       try {
-        geminiResult = await categorizeEmail(sanitizedEmail.body, sanitizedEmail.sender, sanitizedEmail.subject);
+        geminiResult = await categorizeEmail(sanitizedEmail.body, sanitizedEmail.sender, sanitizedEmail.subject, sanitizedEmail.headers);
         logger.info('Gemini categorization result:', {tag: 'gmailService', emailId: sanitizedEmail.id, category: geminiResult.category});
       } catch (categorizationError) {
         logger.error('Failed to categorize email, using fallback:', {
@@ -577,6 +587,46 @@ export const checkForNewEmails = async () => {
 
       // Process based on category
       switch (geminiResult.category) {
+        case 'Studio Ninja Wedding Enquiry':
+          logger.info(`Processing Studio Ninja Wedding Enquiry: "${sanitizedEmail.subject}" - Reply-to: ${sanitizedEmail.replyTo}`, {tag: 'gmailService'});
+          try {
+            // Get wedding enquiry system guide
+            const systemGuide = await getGuidanceForCategory('Studio Ninja Wedding Enquiry');
+            
+            // Generate reply using OpenAI with wedding-specific prompt
+            const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
+            
+            if (draftResult && draftResult.replyText) {
+              // Create draft reply to the reply-to address (not the no-reply sender)
+              const replyToAddress = sanitizedEmail.replyTo || sanitizedEmail.sender;
+              
+              await createDraft(
+                sanitizedEmail.threadId,
+                replyToAddress, // Use reply-to address instead of sender
+                sanitizedEmail.subject,
+                draftResult.replyText
+              );
+              logger.info(`Wedding enquiry draft created for "${sanitizedEmail.subject}" - Reply to: ${replyToAddress} - keeping original unread`, {tag: 'gmailService'});
+              // NOTE: Intentionally NOT marking as read so user can see the original wedding enquiry
+            } else {
+              logger.warn('Failed to generate wedding enquiry draft reply - keeping email unread for manual handling', {tag: 'gmailService', emailId: sanitizedEmail.id});
+            }
+          } catch (draftError) {
+            logger.error('Error processing Studio Ninja Wedding Enquiry - keeping unread for manual handling:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: draftError.message});
+          }
+          break;
+
+        case 'Studio Ninja System':
+          logger.info(`Processing Studio Ninja System email: "${sanitizedEmail.subject}" - marking as read and leaving in inbox`, {tag: 'gmailService'});
+          try {
+            // Just mark as read and leave in inbox - no further processing needed
+            await markAsRead(sanitizedEmail.id);
+            logger.info(`Successfully marked Studio Ninja system email as read`, {tag: 'gmailService'});
+          } catch (systemError) {
+            logger.error('Error marking Studio Ninja system email as read:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: systemError.message});
+          }
+          break;
+
         case 'Draft Email':
           logger.info(`Processing Draft Email: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
           try {

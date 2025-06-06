@@ -64,9 +64,45 @@ const extractJsonFromGeminiResponse = (text) => {
  * @param {string} emailBody - The text content of the email.
  * @param {string} senderEmail - The sender's email address.
  * @param {string} emailSubject - The email subject line.
+ * @param {Object} emailHeaders - Full email headers including reply-to, etc.
  * @returns {Promise<Object>} - An object containing {category, reasoning}
  */
-export const categorizeEmail = async (emailBody, senderEmail, emailSubject = '') => {
+export const categorizeEmail = async (emailBody, senderEmail, emailSubject = '', emailHeaders = null) => {
+  // Check for Studio Ninja emails first (before any other processing)
+  if (senderEmail && senderEmail.toLowerCase().includes('no-reply@studioninja.app')) {
+    logger.info('Detected Studio Ninja email, applying special categorization', {
+      tag: 'geminiService',
+      senderEmail: senderEmail,
+      emailSubject: emailSubject
+    });
+    
+    // Check if email has reply-to field (indicates wedding enquiry)
+    const hasReplyTo = emailHeaders && emailHeaders['reply-to'];
+    const hasFrom = emailHeaders && emailHeaders['from'];
+    const hasTo = emailHeaders && emailHeaders['to'];
+    
+    if (hasReplyTo && hasFrom && hasTo) {
+      logger.info('Studio Ninja email has reply-to field - categorizing as Wedding Enquiry', {
+        tag: 'geminiService',
+        replyTo: emailHeaders['reply-to'],
+        senderEmail: senderEmail
+      });
+      return {
+        category: 'Studio Ninja Wedding Enquiry',
+        reasoning: 'Studio Ninja email with reply-to field detected - this is a wedding enquiry that needs special handling'
+      };
+    } else {
+      logger.info('Studio Ninja email without reply-to field - categorizing as Studio Ninja System', {
+        tag: 'geminiService',
+        senderEmail: senderEmail
+      });
+      return {
+        category: 'Studio Ninja System',
+        reasoning: 'Studio Ninja system email without reply-to field - mark as read and leave in inbox'
+      };
+    }
+  }
+
   if (!genAI) {
     logger.warn('Gemini API client not initialized. Using fallback categorization.', { 
       tag: 'geminiService',
