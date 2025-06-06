@@ -386,8 +386,18 @@ export const checkWhiteLabelForUpdates = async () => {
   }
 };
 
+// Add processing lock to prevent overlapping checks
+let isProcessingEmails = false;
+
 export const checkForNewEmails = async () => {
+  if (isProcessingEmails) {
+    logger.warn('Email processing already in progress, skipping this check', {tag: 'gmailService'});
+    return;
+  }
+  
+  isProcessingEmails = true;
   logger.info('checkForNewEmails: Starting process with new categorization system.', {tag: 'gmailService'});
+  
   try {
     // Fetch emails newer than 5 minutes to avoid reprocessing old emails
     const emails = await fetchUnreadEmails(5, 5);
@@ -409,8 +419,9 @@ export const checkForNewEmails = async () => {
     for (const email of newEmails) {
       logger.info(`Processing New Email: "${email.subject}" from ${email.sender}`, {tag: 'gmailService', emailId: email.id });
       
-      // Mark as processed immediately to avoid reprocessing if something fails
+      // Mark as processed AND read immediately to prevent duplicate processing
       await ProcessedEmailsService.markAsProcessed(email.id);
+      await markAsRead(email.id);
       
       const sanitizedEmail = {
         id: email.id,
@@ -461,7 +472,6 @@ export const checkForNewEmails = async () => {
                 draftResult.replyText
               );
               logger.info(`Draft created for email "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
-              await markAsRead(sanitizedEmail.id);
             } else {
               logger.warn('Failed to generate draft reply', {tag: 'gmailService', emailId: sanitizedEmail.id});
             }
@@ -484,7 +494,6 @@ export const checkForNewEmails = async () => {
           logger.info(`Moving spam email to Email Prison: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
           try {
             await moveToLabel(sanitizedEmail.id, 'Email Prison');
-            await markAsRead(sanitizedEmail.id);
             logger.info(`Successfully moved spam email to Email Prison`, {tag: 'gmailService'});
           } catch (spamError) {
             logger.error('Error moving spam email:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: spamError.message});
@@ -492,13 +501,8 @@ export const checkForNewEmails = async () => {
           break;
 
         case 'Whitelisted Spam':
-          logger.info(`Marking whitelisted spam as read: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
-          try {
-            await markAsRead(sanitizedEmail.id);
-            logger.info(`Successfully marked whitelisted spam as read`, {tag: 'gmailService'});
-          } catch (whitelistError) {
-            logger.error('Error processing whitelisted spam:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: whitelistError.message});
-          }
+          logger.info(`Whitelisted spam already marked as read: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
+          // Email already marked as read at the beginning of processing
           break;
 
         default:
@@ -508,13 +512,15 @@ export const checkForNewEmails = async () => {
           const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
           if (draftResult && draftResult.replyText) {
             await createDraft(sanitizedEmail.threadId, sanitizedEmail.sender, sanitizedEmail.subject, draftResult.replyText);
-            await markAsRead(sanitizedEmail.id);
+            // Email already marked as read at the beginning of processing
           }
           break;
       }
     }
   } catch (error) {
     logger.error('Error in checkForNewEmails:', {tag: 'gmailService', errorMessage: error.message, stack: error.stack });
+  } finally {
+    isProcessingEmails = false;
   }
   logger.info('checkForNewEmails: Finished process.', {tag: 'gmailService'});
 };

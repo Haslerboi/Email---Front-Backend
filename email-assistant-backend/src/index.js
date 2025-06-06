@@ -97,7 +97,7 @@ app.listen(PORT, () => {
 // The if (config.telegram.useWebhook) block and its else counterpart have been removed.
 
 // ✅ Gmail polling loop (This is important and kept)
-const GMAIL_CHECK_INTERVAL = config.GMAIL_CHECK_INTERVAL_MS || (60 * 1000); // 1 minute default, configurable
+const GMAIL_CHECK_INTERVAL = config.GMAIL_CHECK_INTERVAL_MS || (2 * 60 * 1000); // 2 minutes default, configurable
 let gmailCheckCount = 0;
 
 const checkGmail = () => {
