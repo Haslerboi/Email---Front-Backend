@@ -559,7 +559,7 @@ export const checkForNewEmails = async () => {
       logger.info('Calling Gemini for email categorization...', {tag: 'gmailService', emailId: sanitizedEmail.id});
       let geminiResult;
       try {
-        geminiResult = await categorizeEmail(sanitizedEmail.body, sanitizedEmail.sender);
+        geminiResult = await categorizeEmail(sanitizedEmail.body, sanitizedEmail.sender, sanitizedEmail.subject);
         logger.info('Gemini categorization result:', {tag: 'gmailService', emailId: sanitizedEmail.id, category: geminiResult.category});
       } catch (categorizationError) {
         logger.error('Failed to categorize email, using fallback:', {

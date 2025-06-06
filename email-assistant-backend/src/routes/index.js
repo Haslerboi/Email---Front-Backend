@@ -166,22 +166,24 @@ router.get('/pending-notifications', async (req, res) => {
 // POST /api/test-gemini - Test Gemini categorization
 router.post('/test-gemini', async (req, res) => {
   try {
-    const { emailBody, senderEmail } = req.body;
+    const { emailBody, senderEmail, emailSubject } = req.body;
     
     // Use default test data if not provided
     const testEmailBody = emailBody || "Hello, I'm interested in your photography services for my wedding in July. Could you please send me your pricing and availability? Thank you!";
     const testSenderEmail = senderEmail || "bride@example.com";
+    const testEmailSubject = emailSubject || "Wedding Photography Inquiry";
     
-    logger.info(`Testing Gemini categorization for: ${testSenderEmail}`, { tag: 'testGemini' });
+    logger.info(`Testing Gemini categorization for: ${testSenderEmail} - "${testEmailSubject}"`, { tag: 'testGemini' });
     
-    const result = await categorizeEmail(testEmailBody, testSenderEmail);
+    const result = await categorizeEmail(testEmailBody, testSenderEmail, testEmailSubject);
     
-    res.json({
-      status: 'success',
-      testData: {
-        emailBody: testEmailBody,
-        senderEmail: testSenderEmail
-      },
+          res.json({
+        status: 'success',
+        testData: {
+          emailBody: testEmailBody,
+          senderEmail: testSenderEmail,
+          emailSubject: testEmailSubject
+        },
       result: result,
       timestamp: new Date().toISOString()
     });

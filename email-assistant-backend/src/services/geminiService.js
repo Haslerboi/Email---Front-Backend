@@ -63,9 +63,10 @@ const extractJsonFromGeminiResponse = (text) => {
  * Uses Gemini to categorize emails into the new 4-category system
  * @param {string} emailBody - The text content of the email.
  * @param {string} senderEmail - The sender's email address.
+ * @param {string} emailSubject - The email subject line.
  * @returns {Promise<Object>} - An object containing {category, reasoning}
  */
-export const categorizeEmail = async (emailBody, senderEmail) => {
+export const categorizeEmail = async (emailBody, senderEmail, emailSubject = '') => {
   if (!genAI) {
     logger.warn('Gemini API client not initialized. Using fallback categorization.', { 
       tag: 'geminiService',
@@ -75,7 +76,7 @@ export const categorizeEmail = async (emailBody, senderEmail) => {
     });
     
     // Enhanced fallback categorization logic
-    const emailContent = `${emailBody} ${senderEmail}`.toLowerCase();
+    const emailContent = `${emailSubject} ${emailBody} ${senderEmail}`.toLowerCase();
     
     // Check for invoices/billing first
     if (emailContent.includes('invoice') || emailContent.includes('bill') || emailContent.includes('payment') || 
@@ -235,6 +236,7 @@ Your task is to categorize the email into ONE of these four categories EXACTLY a
 
 **Email to categorize:**
 Sender: ${senderEmail}
+Subject: ${emailSubject}
 Body: ${emailBody}
 
 **Response format (use exactly this structure):**
@@ -247,7 +249,9 @@ Body: ${emailBody}
     logger.info('Sending request to Gemini API for new categorization system...', { 
       tag: 'geminiService',
       senderEmail: senderEmail,
-      emailBodyLength: emailBody ? emailBody.length : 0
+      emailSubject: emailSubject,
+      emailBodyLength: emailBody ? emailBody.length : 0,
+      emailSubjectLength: emailSubject ? emailSubject.length : 0
     });
     
     const result = await model.generateContent(prompt);
@@ -284,7 +288,9 @@ Body: ${emailBody}
       errorCode: error.code,
       stack: error.stack,
       senderEmail: senderEmail,
+      emailSubject: emailSubject,
       emailBodyLength: emailBody ? emailBody.length : 0,
+      emailSubjectLength: emailSubject ? emailSubject.length : 0,
       hasGenAI: !!genAI,
       apiKeyLength: config.gemini?.apiKey ? config.gemini.apiKey.length : 0
     };
