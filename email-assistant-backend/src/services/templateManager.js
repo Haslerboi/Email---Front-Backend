@@ -12,6 +12,7 @@ const templateFileMap = {
   'Draft Email': 'draft_email_guide.md',
   'Invoices': 'invoices_guide.md',
   'Spam': 'spam_guide.md',
+  'Notifications': 'notifications_guide.md',
   'Whitelisted Spam': 'whitelisted_spam_guide.md',
   'default': 'default_guide.md' // Fallback
 };

@@ -4,7 +4,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import { config } from './config/env.js';
 import routes from './routes/index.js';
-import { checkForNewEmails, checkWhiteLabelForUpdates } from './services/gmail/index.js';
+import { checkForNewEmails, checkWhiteLabelForUpdates, processPendingNotifications } from './services/gmail/index.js';
 import ProcessedEmailsService from './services/processedEmails.js';
 // import telegramPolling from './services/telegram/polling.js'; // Removed
 import logger from './utils/logger.js';
@@ -153,5 +153,27 @@ const checkWhitelistFolder = () => {
 const whitelistInitialDelay = 30000; // 30 seconds
 setTimeout(checkWhitelistFolder, whitelistInitialDelay);
 console.log(`Whitelist checking will start in approximately ${Math.round(whitelistInitialDelay/1000)} seconds.`);
+
+// ✅ Notification processing loop (checks pending notifications every minute)
+const NOTIFICATION_CHECK_INTERVAL = 60 * 1000; // 1 minute
+let notificationCheckCount = 0;
+
+const checkPendingNotifications = () => {
+  notificationCheckCount++;
+  console.log(`🔔 Checking pending notifications... (Check #${notificationCheckCount}, Instance ${APP_INSTANCE_ID})`);
+  
+  processPendingNotifications()
+    .catch(error => {
+      logger.error('Error during processPendingNotifications:', { error: error.message, stack: error.stack });
+    })
+    .finally(() => {
+      setTimeout(checkPendingNotifications, NOTIFICATION_CHECK_INTERVAL);
+    });
+};
+
+// Start notification checking with initial delay
+const notificationInitialDelay = 45000; // 45 seconds
+setTimeout(checkPendingNotifications, notificationInitialDelay);
+console.log(`Notification processing will start in approximately ${Math.round(notificationInitialDelay/1000)} seconds.`);
 
 export default app;

@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { getApiStatus } from '../services/apiStatus.js';
 import { getAllWhitelistedSenders, addWhitelistedSender, removeWhitelistedSender } from '../services/whitelistService.js';
 import ProcessedEmailsService from '../services/processedEmails.js';
+import PendingNotificationsService from '../services/pendingNotifications.js';
 import logger from '../utils/logger.js';
 
 const router = Router();
@@ -18,12 +19,14 @@ router.get('/', (req, res) => {
       'whitelist-add': '/api/whitelist/add',
       'whitelist-remove': '/api/whitelist/remove',
       'processed-emails': '/api/processed-emails',
-      'processed-emails-clear': '/api/processed-emails/clear (POST - resets all processed emails)'
+      'processed-emails-clear': '/api/processed-emails/clear (POST - resets all processed emails)',
+      'pending-notifications': '/api/pending-notifications'
     },
     categories: [
       'Draft Email - Automatic draft creation for legitimate business emails',
       'Invoices - Automatic filing to Invoices folder',
       'Spam - Automatic move to Email Prison',
+      'Notifications - Stay in inbox for 5 minutes, then move to Notification folder',
       'Whitelisted Spam - Mark as read, keep in inbox'
     ]
   });
@@ -141,6 +144,20 @@ router.post('/processed-emails/clear', async (req, res) => {
   } catch (error) {
     logger.error('Error resetting processed emails:', { error: error.message });
     res.status(500).json({ status: 'error', message: 'Failed to reset processed emails cache' });
+  }
+});
+
+// GET /api/pending-notifications - Get pending notifications statistics
+router.get('/pending-notifications', async (req, res) => {
+  try {
+    const stats = PendingNotificationsService.getStats();
+    res.json({
+      status: 'success',
+      stats: stats
+    });
+  } catch (error) {
+    logger.error('Error fetching pending notifications stats:', { error: error.message, stack: error.stack });
+    res.status(500).json({ status: 'error', message: 'Failed to retrieve pending notifications stats' });
   }
 });
 

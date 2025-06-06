@@ -112,6 +112,27 @@ export const categorizeEmail = async (emailBody, senderEmail) => {
       };
     }
     
+    // Check for notification patterns
+    const notificationKeywords = [
+      'notification', 'alert', 'update', 'report', 'summary', 'status',
+      'backup completed', 'system', 'automated', 'no-reply', 'noreply'
+    ];
+    
+    const notificationSenders = [
+      'github', 'slack', 'trello', 'dropbox', 'google drive', 'icloud',
+      'aws', 'microsoft', 'adobe', 'zoom', 'calendly'
+    ];
+    
+    const hasNotificationKeywords = notificationKeywords.some(keyword => emailContent.includes(keyword));
+    const isNotificationSender = notificationSenders.some(pattern => senderEmail.toLowerCase().includes(pattern));
+    
+    if (hasNotificationKeywords || isNotificationSender) {
+      return {
+        category: 'Notifications',
+        reasoning: 'Fallback categorization: Contains notification keywords or sender patterns'
+      };
+    }
+    
     // Default to Draft Email only for legitimate-looking emails
     return {
       category: 'Draft Email',
@@ -143,12 +164,13 @@ export const categorizeEmail = async (emailBody, senderEmail) => {
 
   const prompt = `You are analyzing an email for a photographer/videographer business. The email content may contain a full conversation thread with multiple messages.
 
-Your task is to categorize the email into ONE of these three categories EXACTLY as written:
+Your task is to categorize the email into ONE of these four categories EXACTLY as written:
 
 **REQUIRED CATEGORIES (choose one exactly):**
 - "Draft Email"
 - "Invoices" 
 - "Spam"
+- "Notifications"
 
 **CATEGORIZATION RULES:**
 
@@ -168,15 +190,22 @@ Your task is to categorize the email into ONE of these three categories EXACTLY 
 
 **"Spam"** - Use for promotional/marketing content:
 - Marketing emails, promotions, newsletters
-- Automated notifications (social media, apps, etc.)
 - Mass marketing campaigns
 - Emails with "unsubscribe" links
-- System notifications that don't require action
 - Obvious spam or phishing attempts
 
+**"Notifications"** - Use for automated system notifications:
+- App notifications (social media, software updates)
+- Service notifications (cloud storage, hosting, etc.)
+- System alerts and status updates
+- Automated reports and summaries
+- Platform notifications (GitHub, Slack, etc.)
+- Non-urgent automated messages that don't require immediate action
+
 **CRITICAL:** 
-- You MUST use one of these exact category names: "Draft Email", "Invoices", or "Spam"
-- When unsure between "Draft Email" and "Spam", choose "Draft Email"
+- You MUST use one of these exact category names: "Draft Email", "Invoices", "Spam", or "Notifications"
+- When unsure between "Draft Email" and "Notifications", choose "Draft Email"
+- When unsure between "Spam" and "Notifications", choose "Notifications" if it's from a legitimate service
 - Do NOT create new category names
 
 **Email to categorize:**
@@ -213,7 +242,7 @@ Body: ${emailBody}
     });
 
     // Validate category
-    const validCategories = ['Draft Email', 'Invoices', 'Spam'];
+    const validCategories = ['Draft Email', 'Invoices', 'Spam', 'Notifications'];
     const category = validCategories.includes(parsedResult.category) ? parsedResult.category : 'Draft Email';
 
     return {

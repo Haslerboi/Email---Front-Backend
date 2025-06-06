@@ -11,6 +11,7 @@ import calendarService from '../calendarService.js';
 import * as chrono from 'chrono-node';
 import { addWhitelistedSender } from '../whitelistService.js';
 import ProcessedEmailsService from '../processedEmails.js';
+import PendingNotificationsService from '../pendingNotifications.js';
 
 const createOAuth2Client = async () => {
   try {
@@ -362,6 +363,65 @@ const createDraft = async (threadId, to, subject, messageText) => {
 /**
  * Check for new emails in the 'white' label and process them for whitelisting
  */
+/**
+ * Process pending notifications and move ones that are ready (older than 5 minutes)
+ */
+export const processPendingNotifications = async () => {
+  logger.debug('Checking for pending notifications ready to be moved...', { tag: 'gmailService' });
+  try {
+    const readyNotifications = PendingNotificationsService.getReadyNotifications();
+    
+    if (!readyNotifications || !readyNotifications.length) {
+      logger.debug('No pending notifications ready to be moved', { tag: 'gmailService' });
+      return;
+    }
+
+    logger.info(`Found ${readyNotifications.length} notifications ready to be moved to Notification folder`, { tag: 'gmailService' });
+
+    for (const notification of readyNotifications) {
+      const { emailId, emailData } = notification;
+      
+      try {
+        logger.info(`Moving notification to Notification folder: "${emailData.subject}" from ${emailData.sender}`, {
+          tag: 'gmailService',
+          emailId: emailId
+        });
+        
+        // Move email to Notification label and mark as read
+        await moveToLabel(emailId, 'Notification');
+        await markAsRead(emailId);
+        
+        // Remove from pending notifications list
+        await PendingNotificationsService.removePendingNotification(emailId);
+        
+        logger.info(`Successfully moved notification to Notification folder: "${emailData.subject}"`, {
+          tag: 'gmailService',
+          emailId: emailId
+        });
+        
+      } catch (moveError) {
+        logger.error(`Error moving notification ${emailId}:`, { 
+          tag: 'gmailService',
+          emailId: emailId,
+          subject: emailData.subject,
+          error: moveError.message,
+          stack: moveError.stack
+        });
+      }
+    }
+    
+    // Clean up old pending notifications
+    await PendingNotificationsService.cleanup();
+    
+  } catch (error) {
+    logger.error('Error processing pending notifications:', { 
+      tag: 'gmailService',
+      error: error.message,
+      stack: error.stack
+    });
+  }
+};
+
 export const checkWhiteLabelForUpdates = async () => {
   logger.info('Checking white label for new emails to whitelist...', { tag: 'gmailService' });
   try {
@@ -459,9 +519,11 @@ export const checkForNewEmails = async () => {
         ageMinutes: ageMinutes
       });
       
-      // Mark as processed AND read immediately to prevent duplicate processing
+      // Mark as processed immediately to prevent duplicate processing
       await ProcessedEmailsService.markAsProcessed(email.id);
-      await markAsRead(email.id);
+      
+      // Note: We'll mark as read later based on the category
+      // Notifications need to stay unread in inbox for 5 minutes
       
       const sanitizedEmail = {
         id: email.id,
@@ -512,8 +574,10 @@ export const checkForNewEmails = async () => {
                 draftResult.replyText
               );
               logger.info(`Draft created for email "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
+              await markAsRead(sanitizedEmail.id);
             } else {
               logger.warn('Failed to generate draft reply', {tag: 'gmailService', emailId: sanitizedEmail.id});
+              await markAsRead(sanitizedEmail.id); // Mark as read even if draft failed
             }
           } catch (draftError) {
             logger.error('Error processing Draft Email:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: draftError.message});
@@ -524,6 +588,7 @@ export const checkForNewEmails = async () => {
           logger.info(`Moving invoice email to Invoices folder: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
           try {
             await moveToLabel(sanitizedEmail.id, 'Invoices');
+            await markAsRead(sanitizedEmail.id);
             logger.info(`Successfully moved invoice email to Invoices folder`, {tag: 'gmailService'});
           } catch (invoiceError) {
             logger.error('Error moving invoice email:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: invoiceError.message});
@@ -534,25 +599,48 @@ export const checkForNewEmails = async () => {
           logger.info(`Moving spam email to Email Prison: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
           try {
             await moveToLabel(sanitizedEmail.id, 'Email Prison');
+            await markAsRead(sanitizedEmail.id);
             logger.info(`Successfully moved spam email to Email Prison`, {tag: 'gmailService'});
           } catch (spamError) {
             logger.error('Error moving spam email:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: spamError.message});
           }
           break;
 
+        case 'Notifications':
+          logger.info(`Adding notification to pending list: "${sanitizedEmail.subject}" from ${sanitizedEmail.sender}`, {tag: 'gmailService'});
+          try {
+            // Add to pending notifications (will be moved after 5 minutes)
+            await PendingNotificationsService.addPendingNotification(sanitizedEmail);
+            // Don't mark as read yet - keep in inbox for 5 minutes
+            logger.info(`Successfully added notification to pending list`, {tag: 'gmailService'});
+          } catch (notificationError) {
+            logger.error('Error adding notification to pending list:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: notificationError.message});
+          }
+          break;
+
         case 'Whitelisted Spam':
-          logger.info(`Whitelisted spam already marked as read: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
-          // Email already marked as read at the beginning of processing
+          logger.info(`Marking whitelisted spam as read: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
+          try {
+            await markAsRead(sanitizedEmail.id);
+            logger.info(`Successfully marked whitelisted spam as read`, {tag: 'gmailService'});
+          } catch (whitelistError) {
+            logger.error('Error marking whitelisted spam as read:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: whitelistError.message});
+          }
           break;
 
         default:
           logger.warn(`Unknown category "${geminiResult.category}", treating as Draft Email`, {tag: 'gmailService'});
           // Fallback to Draft Email processing
-          const systemGuide = await getGuidanceForCategory('Draft Email');
-          const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
-          if (draftResult && draftResult.replyText) {
-            await createDraft(sanitizedEmail.threadId, sanitizedEmail.sender, sanitizedEmail.subject, draftResult.replyText);
-            // Email already marked as read at the beginning of processing
+          try {
+            const systemGuide = await getGuidanceForCategory('Draft Email');
+            const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
+            if (draftResult && draftResult.replyText) {
+              await createDraft(sanitizedEmail.threadId, sanitizedEmail.sender, sanitizedEmail.subject, draftResult.replyText);
+            }
+            await markAsRead(sanitizedEmail.id);
+          } catch (defaultError) {
+            logger.error('Error in default case processing:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: defaultError.message});
+            await markAsRead(sanitizedEmail.id); // Mark as read even if processing failed
           }
           break;
       }
