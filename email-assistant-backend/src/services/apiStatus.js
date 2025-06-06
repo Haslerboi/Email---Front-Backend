@@ -1,5 +1,6 @@
 import TaskStateManager from './email-state.js';
 import { checkForNewEmails } from './gmail/index.js';
+import ProcessedEmailsService from './processedEmails.js';
 import logger from '../utils/logger.js';
 
 export async function getApiStatus() {
@@ -54,6 +55,21 @@ export async function getApiStatus() {
   } catch (error) {
     logger.error('Error checking Gemini config in apiStatus:', error);
     details.geminiConfig = { available: false, error: error.message };
+    allHealthy = false;
+  }
+
+  // Check processed emails service
+  try {
+    const processedStats = ProcessedEmailsService.getStats();
+    details.processedEmails = {
+      available: true,
+      totalProcessed: processedStats.totalProcessed,
+      lastCheckTime: processedStats.lastCheckTime,
+      timeSinceLastCheck: processedStats.timeSinceLastCheck ? `${Math.round(processedStats.timeSinceLastCheck / 1000)}s` : 'never'
+    };
+  } catch (error) {
+    logger.error('Error checking processed emails service in apiStatus:', error);
+    details.processedEmails = { available: false, error: error.message };
     allHealthy = false;
   }
 

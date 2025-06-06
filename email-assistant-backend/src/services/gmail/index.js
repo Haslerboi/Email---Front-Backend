@@ -10,6 +10,7 @@ import logger from '../../utils/logger.js';
 import calendarService from '../calendarService.js';
 import * as chrono from 'chrono-node';
 import { addWhitelistedSender } from '../whitelistService.js';
+import ProcessedEmailsService from '../processedEmails.js';
 
 const createOAuth2Client = async () => {
   try {
@@ -184,14 +185,20 @@ const moveBackToInbox = async (messageId, fromLabelName) => {
   }
 };
 
-const fetchUnreadEmails = async (maxResults = 10) => {
+const fetchUnreadEmails = async (maxResults = 10, newerThanMinutes = 5) => {
   try {
     const gmail = await getGmailClient();
-    console.log(`Gmail Service - Fetching unread emails from main inbox only`);
+    
+    // Calculate timestamp for emails newer than X minutes ago
+    const newerThanTime = new Date();
+    newerThanTime.setMinutes(newerThanTime.getMinutes() - newerThanMinutes);
+    const newerThanTimestamp = Math.floor(newerThanTime.getTime() / 1000);
+    
+    console.log(`Gmail Service - Fetching emails newer than ${newerThanMinutes} minutes from main inbox only`);
 
     const listResponse = await gmail.users.messages.list({
       userId: 'me',
-      q: 'is:unread in:inbox -category:promotions -category:social -category:spam -category:forums -category:updates',
+      q: `is:unread in:inbox -category:promotions -category:social -category:spam -category:forums -category:updates newer_than:${newerThanMinutes}m`,
       maxResults: maxResults
     });
 
@@ -412,14 +419,28 @@ export const checkWhiteLabelForUpdates = async () => {
 export const checkForNewEmails = async () => {
   logger.info('checkForNewEmails: Starting process with new categorization system.', {tag: 'gmailService'});
   try {
-    const emails = await fetchUnreadEmails(5);
+    // Fetch emails newer than 5 minutes to avoid reprocessing old emails
+    const emails = await fetchUnreadEmails(5, 5);
     if (!emails || !emails.length) {
       logger.info('checkForNewEmails: No new unread emails to process.', {tag: 'gmailService'});
       return;
     }
 
-    for (const email of emails) {
+    // Filter out emails that have already been processed
+    const newEmails = emails.filter(email => !ProcessedEmailsService.isProcessed(email.id));
+    
+    if (newEmails.length === 0) {
+      logger.info(`checkForNewEmails: Found ${emails.length} emails but all were already processed.`, {tag: 'gmailService'});
+      return;
+    }
+    
+    logger.info(`checkForNewEmails: Processing ${newEmails.length} new emails (filtered from ${emails.length} total)`, {tag: 'gmailService'});
+
+    for (const email of newEmails) {
       logger.info(`Processing New Email: "${email.subject}" from ${email.sender}`, {tag: 'gmailService', emailId: email.id });
+      
+      // Mark as processed immediately to avoid reprocessing if something fails
+      await ProcessedEmailsService.markAsProcessed(email.id);
       
       const sanitizedEmail = {
         id: email.id,

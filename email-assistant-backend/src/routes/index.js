@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import { getApiStatus } from '../services/apiStatus.js';
 import { getAllWhitelistedSenders, addWhitelistedSender, removeWhitelistedSender } from '../services/whitelistService.js';
+import ProcessedEmailsService from '../services/processedEmails.js';
 import logger from '../utils/logger.js';
 
 const router = Router();
@@ -15,7 +16,9 @@ router.get('/', (req, res) => {
       status: '/api/status',
       whitelist: '/api/whitelist',
       'whitelist-add': '/api/whitelist/add',
-      'whitelist-remove': '/api/whitelist/remove'
+      'whitelist-remove': '/api/whitelist/remove',
+      'processed-emails': '/api/processed-emails',
+      'processed-emails-clear': '/api/processed-emails/clear'
     },
     categories: [
       'Draft Email - Automatic draft creation for legitimate business emails',
@@ -103,6 +106,36 @@ router.delete('/whitelist/remove', async (req, res) => {
   } catch (error) {
     logger.error('Error removing sender from whitelist:', { error: error.message, senderEmail });
     res.status(500).json({ status: 'error', message: 'Failed to remove sender from whitelist' });
+  }
+});
+
+// GET /api/processed-emails - Get processed emails statistics
+router.get('/processed-emails', async (req, res) => {
+  try {
+    const stats = ProcessedEmailsService.getStats();
+    res.json({
+      status: 'success',
+      stats: stats
+    });
+  } catch (error) {
+    logger.error('Error fetching processed emails stats:', { error: error.message, stack: error.stack });
+    res.status(500).json({ status: 'error', message: 'Failed to retrieve processed emails stats' });
+  }
+});
+
+// POST /api/processed-emails/clear - Clear processed emails (for testing)
+router.post('/processed-emails/clear', async (req, res) => {
+  try {
+    // Reset the processed emails service
+    await ProcessedEmailsService.cleanup();
+    logger.info('Manually cleared processed emails cache');
+    res.json({
+      status: 'success',
+      message: 'Processed emails cache cleared successfully'
+    });
+  } catch (error) {
+    logger.error('Error clearing processed emails:', { error: error.message });
+    res.status(500).json({ status: 'error', message: 'Failed to clear processed emails cache' });
   }
 });
 

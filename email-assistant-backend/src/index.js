@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import { config } from './config/env.js';
 import routes from './routes/index.js';
 import { checkForNewEmails, checkWhiteLabelForUpdates } from './services/gmail/index.js';
+import ProcessedEmailsService from './services/processedEmails.js';
 // import telegramPolling from './services/telegram/polling.js'; // Removed
 import logger from './utils/logger.js';
 
@@ -135,9 +136,13 @@ const checkWhitelistFolder = () => {
   whitelistCheckCount++;
   console.log(`🔍 Checking whitelist folder... (Check #${whitelistCheckCount}, Instance ${APP_INSTANCE_ID})`);
   
-  checkWhiteLabelForUpdates()
+  Promise.all([
+    checkWhiteLabelForUpdates(),
+    // Run cleanup every 10 checks (every 20 minutes)
+    whitelistCheckCount % 10 === 0 ? ProcessedEmailsService.cleanup() : Promise.resolve()
+  ])
     .catch(error => {
-      logger.error('Error during checkWhiteLabelForUpdates:', { error: error.message, stack: error.stack });
+      logger.error('Error during whitelist/cleanup check:', { error: error.message, stack: error.stack });
     })
     .finally(() => {
       setTimeout(checkWhitelistFolder, WHITELIST_CHECK_INTERVAL);
