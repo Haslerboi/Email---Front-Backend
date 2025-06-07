@@ -77,7 +77,6 @@ $4,200 NZD (GST inclusive)
 - 10 hours of wedding photography coverage  
 - Online gallery with 500+ images  
 - 50% off engagement shoot  
-- Additional hourly rate: $60/hour  
 
 **04 — Photography & Film**  
 $8,500 NZD (GST inclusive)  
@@ -110,13 +109,13 @@ $8,500 NZD (GST inclusive)
 
 **Subject:** Stoked to Hear From You Two! Hey [Couple's Name],
 
-Firstly, a huge congratulations on your engagement and thank you so much for reaching out — [I'm/We're] stoked you love our work!
+Firstly, a huge congratulations on your engagement and thank you so much for reaching out!
 
-[Your venue and date acknowledgement.]
+[Your venue acknowledgement.]
 
-[Availability confirmation.]
+[Availability confirmation using date provided.]
 
-[Pricing details if relevant.]
+[Pricing details if asked for/relevant.]
 
 You can check out our full pricing and other package options here if you're curious about adding video or anything else:
 https://thecedarweddings.co/pricing/
