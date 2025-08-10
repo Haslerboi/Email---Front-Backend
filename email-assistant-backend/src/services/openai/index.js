@@ -210,7 +210,7 @@ Follow the SYSTEM GUIDE exactly. Requirements:
   }
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -218,9 +218,9 @@ Follow the SYSTEM GUIDE exactly. Requirements:
       },
       body: JSON.stringify({
         model: 'gpt-5',
-        messages: messages,
+        input: messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n'),
         temperature: 0.3,
-        max_completion_tokens: 1500
+        max_output_tokens: 1500
       })
     });
 
@@ -255,7 +255,7 @@ Follow the SYSTEM GUIDE exactly. Requirements:
     }
 
     const data = await response.json();
-    const replyContent = data.choices[0]?.message?.content?.trim();
+    const replyContent = (data.output_text || '').trim();
 
     if (!replyContent) {
       logger.error('OpenAI response did not contain reply content (generateGuidedReply).', {tag: 'openaiService', data});
@@ -331,18 +331,18 @@ Follow the SYSTEM GUIDE exactly. Draft a complete, ready-to-send email including
     logger.debug('Sending prompt to GPT-5 (generateReply):', {tag: 'openaiService', promptContext: promptForLogging});
   }
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${config.openai.apiKey}`
         },
-          body: JSON.stringify({
-            model: 'gpt-5',
-            messages: messages,
-            temperature: 0.3,
-            max_completion_tokens: 1200
-          })
+        body: JSON.stringify({
+          model: 'gpt-5',
+          input: messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n'),
+          temperature: 0.3,
+          max_output_tokens: 1200
+        })
       });
       if (!response.ok) {
         const raw = await response.text();
@@ -376,7 +376,7 @@ Follow the SYSTEM GUIDE exactly. Draft a complete, ready-to-send email including
         throw new Error(`OpenAI API error: ${errorMessage}`);
       }
       const data = await response.json();
-    const replyContent = data.choices[0]?.message?.content?.trim();
+      const replyContent = (data.output_text || '').trim();
     if (!replyContent) {
         logger.error('OpenAI response did not contain reply content (generateReply).', {tag: 'openaiService', data});
         throw new Error('OpenAI did not return reply content.');

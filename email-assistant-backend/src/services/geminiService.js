@@ -224,7 +224,7 @@ Body: ${emailBody}
 }`;
 
   try {
-    logger.info('Sending request to OpenAI (gpt-5-mini) for categorization...', {
+    logger.info('Sending request to OpenAI Responses API (gpt-5-mini) for categorization...', {
       tag: 'geminiService',
       senderEmail: senderEmail,
       emailSubject: emailSubject,
@@ -232,7 +232,7 @@ Body: ${emailBody}
       emailSubjectLength: emailSubject ? emailSubject.length : 0
     });
 
-    const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    const aiResponse = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -240,10 +240,9 @@ Body: ${emailBody}
       },
       body: JSON.stringify({
         model: 'gpt-5-mini',
-        messages: [{ role: 'user', content: `${prompt}\n\nPlease respond in valid JSON.` }],
+        input: `${prompt}\n\nReturn ONLY a JSON object (no code fences, no prose).`,
         temperature: 0.2,
-        max_completion_tokens: 500,
-        response_format: { type: 'json_object' }
+        max_output_tokens: 500
       })
     });
 
@@ -253,9 +252,9 @@ Body: ${emailBody}
     }
 
     const aiData = await aiResponse.json();
-    const responseText = aiData.choices[0]?.message?.content ?? '';
+    const responseText = aiData.output_text ?? '';
 
-    logger.info('Received response from OpenAI (gpt-5-mini).', {
+    logger.info('Received response from OpenAI Responses API (gpt-5-mini).', {
       tag: 'geminiService',
       responseLength: responseText ? responseText.length : 0
     });
