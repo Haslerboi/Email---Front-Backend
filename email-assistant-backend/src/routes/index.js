@@ -283,7 +283,15 @@ router.get('/test-categorization', async (req, res) => {
     const text = await resp.text();
     let data = null;
     try { data = JSON.parse(text); } catch {}
-    return res.status(resp.ok ? 200 : resp.status).json({ ok: resp.ok, status: resp.status, raw: text, parsed: data?.output_parsed || null, output_text: data?.output_text || null });
+    // Try to surface parsed content or extract message text
+    let extractedText = data?.output_text || null;
+    if (!extractedText && Array.isArray(data?.output)) {
+      const msg = data.output.find(o => o.type === 'message');
+      if (msg && Array.isArray(msg.content) && msg.content[0]?.text) {
+        extractedText = msg.content[0].text;
+      }
+    }
+    return res.status(resp.ok ? 200 : resp.status).json({ ok: resp.ok, status: resp.status, raw: text, parsed: data?.output_parsed || null, output_text: extractedText });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e.message });
   }

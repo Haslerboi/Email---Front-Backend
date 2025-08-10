@@ -274,7 +274,16 @@ Body: ${emailBody}
 
     const aiData = await aiResponse.json();
     const parsed = aiData.output_parsed;
-    const responseText = aiData.output_text ?? '';
+    let responseText = aiData.output_text ?? '';
+    if (!responseText && Array.isArray(aiData.output)) {
+      // Try to extract text from message content
+      for (const item of aiData.output) {
+        if (item?.type === 'message' && Array.isArray(item.content) && item.content[0]?.text) {
+          responseText = item.content[0].text;
+          break;
+        }
+      }
+    }
 
     logger.info('Received response from OpenAI Responses API (gpt-5-mini).', {
       tag: 'geminiService',
