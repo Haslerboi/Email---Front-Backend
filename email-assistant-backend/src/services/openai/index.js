@@ -216,18 +216,42 @@ Follow the SYSTEM GUIDE exactly. Requirements:
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${config.openai.apiKey}`
       },
-        body: JSON.stringify({
-          model: 'gpt-5', 
+      body: JSON.stringify({
+        model: 'gpt-5',
         messages: messages,
-        temperature: 0.3, 
-        max_tokens: 1500 
+        temperature: 0.3,
+        max_tokens: 1500
       })
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      logger.error('OpenAI API error response (generateGuidedReply):', {tag: 'openaiService', errorData});
-      throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+      const raw = await response.text();
+      let errorMessage = response.statusText;
+      try { const asJson = JSON.parse(raw); errorMessage = asJson.error?.message || raw; } catch {}
+      logger.error('OpenAI API error response (generateGuidedReply):', { tag: 'openaiService', status: response.status, body: raw });
+      // Targeted fallback if model/availability problem
+      if (/model|unsupported|not found|unavailable/i.test(errorMessage)) {
+        logger.warn('Retrying generateGuidedReply with fallback model gpt-4o', { tag: 'openaiService' });
+        const fallbackResp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.openai.apiKey}`
+          },
+          body: JSON.stringify({ model: 'gpt-4o', messages, temperature: 0.3, max_tokens: 1500 })
+        });
+        if (!fallbackResp.ok) {
+          const fallbackRaw = await fallbackResp.text();
+          logger.error('Fallback model also failed (generateGuidedReply)', { tag: 'openaiService', status: fallbackResp.status, body: fallbackRaw });
+          throw new Error(`OpenAI error on fallback: ${fallbackRaw}`);
+        }
+        const fallbackData = await fallbackResp.json();
+        const replyContent = fallbackData.choices[0]?.message?.content?.trim();
+        if (!replyContent) throw new Error('OpenAI fallback did not return reply content.');
+        logger.info('OpenAI Service: Guided reply generated successfully via fallback model.', { tag: 'openaiService' });
+        return replyContent;
+      }
+      throw new Error(`OpenAI API error: ${errorMessage}`);
     }
 
     const data = await response.json();
@@ -314,16 +338,42 @@ Follow the SYSTEM GUIDE exactly. Draft a complete, ready-to-send email including
           'Authorization': `Bearer ${config.openai.apiKey}`
         },
         body: JSON.stringify({
-          model: 'gpt-5', 
+          model: 'gpt-5',
           messages: messages,
           temperature: 0.3,
           max_tokens: 1200
         })
       });
       if (!response.ok) {
-        const errorData = await response.json();
-      logger.error('OpenAI API error response (generateReply):', {tag: 'openaiService', errorData});
-        throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+        const raw = await response.text();
+        let errorMessage = response.statusText;
+        try { const asJson = JSON.parse(raw); errorMessage = asJson.error?.message || raw; } catch {}
+        logger.error('OpenAI API error response (generateReply):', { tag: 'openaiService', status: response.status, body: raw });
+        if (/model|unsupported|not found|unavailable/i.test(errorMessage)) {
+          logger.warn('Retrying generateReply with fallback model gpt-4o', { tag: 'openaiService' });
+          const fallbackResp = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${config.openai.apiKey}`
+            },
+            body: JSON.stringify({ model: 'gpt-4o', messages, temperature: 0.3, max_tokens: 1200 })
+          });
+          if (!fallbackResp.ok) {
+            const fallbackRaw = await fallbackResp.text();
+            logger.error('Fallback model also failed (generateReply)', { tag: 'openaiService', status: fallbackResp.status, body: fallbackRaw });
+            throw new Error(`OpenAI error on fallback: ${fallbackRaw}`);
+          }
+          const fallbackData = await fallbackResp.json();
+          const replyContent = fallbackData.choices[0]?.message?.content?.trim();
+          if (!replyContent) throw new Error('OpenAI fallback did not return reply content.');
+          return {
+            replyText: replyContent,
+            suggestedSubject: originalEmail.subject.startsWith('Re:') ? originalEmail.subject : `Re: ${originalEmail.subject}`,
+            timestamp: new Date().toISOString(),
+          };
+        }
+        throw new Error(`OpenAI API error: ${errorMessage}`);
       }
       const data = await response.json();
     const replyContent = data.choices[0]?.message?.content?.trim();
