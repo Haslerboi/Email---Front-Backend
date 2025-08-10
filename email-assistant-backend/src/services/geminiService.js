@@ -244,21 +244,20 @@ Body: ${emailBody}
         input: `${prompt}\n\nReturn ONLY a JSON object (no code fences, no prose).`,
         reasoning: { effort: 'low' },
         max_output_tokens: 800,
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'EmailCategorization',
-            schema: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                category: {
-                  type: 'string',
-                  enum: ['Draft Email', 'Invoices', 'Spam', 'Notifications']
+        text: {
+          format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'EmailCategorization',
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  category: { type: 'string', enum: ['Draft Email', 'Invoices', 'Spam', 'Notifications'] },
+                  reasoning: { type: 'string' }
                 },
-                reasoning: { type: 'string' }
-              },
-              required: ['category', 'reasoning']
+                required: ['category', 'reasoning']
+              }
             }
           }
         }

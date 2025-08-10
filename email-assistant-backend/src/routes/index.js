@@ -262,18 +262,20 @@ router.get('/test-categorization', async (req, res) => {
         input: `${prompt}`,
         reasoning: { effort: 'low' },
         max_output_tokens: 800,
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'EmailCategorization',
-            schema: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                category: { type: 'string', enum: ['Draft Email', 'Invoices', 'Spam', 'Notifications'] },
-                reasoning: { type: 'string' }
-              },
-              required: ['category', 'reasoning']
+        text: {
+          format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'EmailCategorization',
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  category: { type: 'string', enum: ['Draft Email', 'Invoices', 'Spam', 'Notifications'] },
+                  reasoning: { type: 'string' }
+                },
+                required: ['category', 'reasoning']
+              }
             }
           }
         }
