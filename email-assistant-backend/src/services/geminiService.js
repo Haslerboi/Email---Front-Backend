@@ -248,17 +248,14 @@ Body: ${emailBody}
           format: {
             type: 'json_schema',
             name: 'EmailCategorization',
-            json_schema: {
-              name: 'EmailCategorization',
-              schema: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  category: { type: 'string', enum: ['Draft Email', 'Invoices', 'Spam', 'Notifications'] },
-                  reasoning: { type: 'string' }
-                },
-                required: ['category', 'reasoning']
-              }
+            schema: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                category: { type: 'string', enum: ['Draft Email', 'Invoices', 'Spam', 'Notifications'] },
+                reasoning: { type: 'string' }
+              },
+              required: ['category', 'reasoning']
             }
           }
         }
