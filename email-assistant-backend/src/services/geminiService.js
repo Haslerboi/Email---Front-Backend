@@ -240,11 +240,17 @@ Body: ${emailBody}
       },
       body: JSON.stringify({
         model: 'gpt-5-mini',
+        instructions: 'You are a strict JSON generator. Return ONLY a JSON object matching the requested schema. No prose, no code fences.',
         input: `${prompt}\n\nReturn ONLY a JSON object (no code fences, no prose).`,
         temperature: 0.2,
         max_output_tokens: 500
       })
     });
+
+    if (!aiResponse.ok) {
+      const errorBody = await aiResponse.text();
+      throw new Error(`OpenAI Responses error: ${aiResponse.status} ${aiResponse.statusText} - ${errorBody}`);
+    }
 
     if (!aiResponse.ok) {
       const errorBody = await aiResponse.text();

@@ -218,6 +218,7 @@ Follow the SYSTEM GUIDE exactly. Requirements:
       },
       body: JSON.stringify({
         model: 'gpt-5',
+        instructions: 'You are a helpful email assistant. Produce a complete, plain-text email. No subject line, no markdown.',
         input: messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n'),
         temperature: 0.3,
         max_output_tokens: 1500
@@ -339,6 +340,7 @@ Follow the SYSTEM GUIDE exactly. Draft a complete, ready-to-send email including
         },
         body: JSON.stringify({
           model: 'gpt-5',
+          instructions: 'You are a helpful email assistant. Produce a complete, plain-text email. No subject line, no markdown.',
           input: messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n'),
           temperature: 0.3,
           max_output_tokens: 1200
