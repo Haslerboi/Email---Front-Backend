@@ -231,7 +231,7 @@ Follow the SYSTEM GUIDE exactly. Requirements:
       logger.error('OpenAI API error response (generateGuidedReply):', { tag: 'openaiService', status: response.status, body: raw });
       // Targeted fallback if model/availability problem
       if (/model|unsupported|not found|unavailable/i.test(errorMessage)) {
-        logger.warn('Retrying generateGuidedReply with fallback model gpt-4o', { tag: 'openaiService' });
+          logger.warn('Retrying generateGuidedReply with fallback model gpt-4o', { tag: 'openaiService' });
         const fallbackResp = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
