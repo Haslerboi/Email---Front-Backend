@@ -1,6 +1,7 @@
 // Main router that combines all route modules
 import { Router } from 'express';
 import { getApiStatus } from '../services/apiStatus.js';
+import { config } from '../config/env.js';
 import { getAllWhitelistedSenders, addWhitelistedSender, removeWhitelistedSender } from '../services/whitelistService.js';
 import ProcessedEmailsService from '../services/processedEmails.js';
 import PendingNotificationsService from '../services/pendingNotifications.js';
