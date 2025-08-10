@@ -247,6 +247,7 @@ Body: ${emailBody}
         text: {
           format: {
             type: 'json_schema',
+            name: 'EmailCategorization',
             json_schema: {
               name: 'EmailCategorization',
               schema: {

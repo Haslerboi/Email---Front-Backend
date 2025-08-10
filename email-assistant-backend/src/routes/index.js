@@ -265,6 +265,7 @@ router.get('/test-categorization', async (req, res) => {
         text: {
           format: {
             type: 'json_schema',
+            name: 'EmailCategorization',
             json_schema: {
               name: 'EmailCategorization',
               schema: {
