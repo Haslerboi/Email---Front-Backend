@@ -25,7 +25,8 @@ router.get('/', (req, res) => {
       'processed-emails-clear': '/api/processed-emails/clear (POST - resets all processed emails)',
       'pending-notifications': '/api/pending-notifications',
       'test-gemini': '/api/test-gemini (POST - test Gemini categorization)',
-      'test-gpt5-mini': '/api/test-gpt5-mini (GET - simple OpenAI Responses API check)'
+      'test-gpt5-mini': '/api/test-gpt5-mini (GET - simple OpenAI Responses API check)',
+      'test-categorization': '/api/test-categorization (GET - run categorization prompt via gpt-5-mini and return raw)'
     },
     categories: [
       'Draft Email - Automatic draft creation for legitimate business emails',
@@ -235,6 +236,54 @@ router.get('/test-gpt5-mini', async (req, res) => {
     }
     const data = JSON.parse(text);
     return res.json({ ok: true, output_text: data.output_text, raw: data });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// Debug endpoint to run the categorization prompt directly and return raw model output
+router.get('/test-categorization', async (req, res) => {
+  try {
+    const senderEmail = req.query.sender || 'Railway <hello@notify.railway.app>';
+    const emailSubject = req.query.subject || 'Deployment crashed for Assistant-Backend in perceptive-cat!';
+    const emailBody = req.query.body || 'Your Railway service crashed. Please check logs.';
+
+    const prompt = `You are analyzing an email for a photographer/videographer business.\n\nYour task is to categorize the email into ONE of these four categories EXACTLY as written:\n- "Draft Email"\n- "Invoices"\n- "Spam"\n- "Notifications"\n\nEmail to categorize:\nSender: ${senderEmail}\nSubject: ${emailSubject}\nBody: ${emailBody}\n\nReturn ONLY a JSON object with fields: category, reasoning.`;
+
+    const resp = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.openai.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-5-mini',
+        instructions: 'You are a strict JSON generator. Return ONLY a JSON object matching the requested schema. No prose, no code fences.',
+        input: `${prompt}`,
+        reasoning: { effort: 'low' },
+        max_output_tokens: 800,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'EmailCategorization',
+            schema: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                category: { type: 'string', enum: ['Draft Email', 'Invoices', 'Spam', 'Notifications'] },
+                reasoning: { type: 'string' }
+              },
+              required: ['category', 'reasoning']
+            }
+          }
+        }
+      })
+    });
+
+    const text = await resp.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch {}
+    return res.status(resp.ok ? 200 : resp.status).json({ ok: resp.ok, status: resp.status, raw: text, parsed: data?.output_parsed || null, output_text: data?.output_text || null });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e.message });
   }
