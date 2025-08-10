@@ -239,10 +239,10 @@ Body: ${emailBody}
         'Authorization': `Bearer ${config.openai.apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-mini',
         messages: [{ role: 'user', content: `${prompt}\n\nPlease respond in valid JSON.` }],
         temperature: 0.2,
-        max_tokens: 500,
+        max_completion_tokens: 500,
         response_format: { type: 'json_object' }
       })
     });
