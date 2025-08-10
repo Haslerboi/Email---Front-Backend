@@ -6,6 +6,7 @@ import ProcessedEmailsService from '../services/processedEmails.js';
 import PendingNotificationsService from '../services/pendingNotifications.js';
 import { categorizeEmail } from '../services/geminiService.js';
 import logger from '../utils/logger.js';
+import fetch from 'node-fetch';
 
 const router = Router();
 
@@ -22,7 +23,8 @@ router.get('/', (req, res) => {
       'processed-emails': '/api/processed-emails',
       'processed-emails-clear': '/api/processed-emails/clear (POST - resets all processed emails)',
       'pending-notifications': '/api/pending-notifications',
-      'test-gemini': '/api/test-gemini (POST - test Gemini categorization)'
+      'test-gemini': '/api/test-gemini (POST - test Gemini categorization)',
+      'test-gpt5-mini': '/api/test-gpt5-mini (GET - simple OpenAI Responses API check)'
     },
     categories: [
       'Draft Email - Automatic draft creation for legitimate business emails',
@@ -205,3 +207,33 @@ router.post('/test-gemini', async (req, res) => {
 });
 
 export default router; 
+
+// Simple probe endpoint for GPT-5-mini via Responses API
+router.get('/test-gpt5-mini', async (req, res) => {
+  try {
+    if (!config?.openai?.apiKey) {
+      return res.status(500).json({ ok: false, error: 'No OPENAI_API_KEY configured' });
+    }
+    const resp = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.openai.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-5-mini',
+        input: 'Say OK',
+        max_output_tokens: 20,
+        temperature: 0,
+      }),
+    });
+    const text = await resp.text();
+    if (!resp.ok) {
+      return res.status(resp.status).json({ ok: false, error: text });
+    }
+    const data = JSON.parse(text);
+    return res.json({ ok: true, output_text: data.output_text, raw: data });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
