@@ -243,7 +243,25 @@ Body: ${emailBody}
         instructions: 'You are a strict JSON generator. Return ONLY a JSON object matching the requested schema. No prose, no code fences.',
         input: `${prompt}\n\nReturn ONLY a JSON object (no code fences, no prose).`,
         temperature: 0.2,
-        max_output_tokens: 500
+        max_output_tokens: 500,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'EmailCategorization',
+            schema: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                category: {
+                  type: 'string',
+                  enum: ['Draft Email', 'Invoices', 'Spam', 'Notifications']
+                },
+                reasoning: { type: 'string' }
+              },
+              required: ['category', 'reasoning']
+            }
+          }
+        }
       })
     });
 
@@ -258,6 +276,7 @@ Body: ${emailBody}
     }
 
     const aiData = await aiResponse.json();
+    const parsed = aiData.output_parsed;
     const responseText = aiData.output_text ?? '';
 
     logger.info('Received response from OpenAI Responses API (gpt-5-mini).', {
@@ -265,7 +284,7 @@ Body: ${emailBody}
       responseLength: responseText ? responseText.length : 0
     });
 
-    const parsedResult = extractJsonFromAIResponse(responseText);
+    const parsedResult = parsed ?? extractJsonFromAIResponse(responseText);
     logger.info('Successfully parsed AI response.', { 
       tag: 'geminiService', 
       category: parsedResult.category,

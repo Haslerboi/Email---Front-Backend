@@ -257,6 +257,13 @@ Follow the SYSTEM GUIDE exactly. Requirements:
 
     const data = await response.json();
     const replyContent = (data.output_text || '').trim();
+    // If model returns empty output_text but has output (array), join any text items
+    if (!replyContent && Array.isArray(data.output)) {
+      const joined = data.output.map(o => o.content?.[0]?.text || o.text || '').join('\n').trim();
+      if (joined) {
+        return joined;
+      }
+    }
 
     if (!replyContent) {
       logger.error('OpenAI response did not contain reply content (generateGuidedReply).', {tag: 'openaiService', data});
@@ -379,6 +386,16 @@ Follow the SYSTEM GUIDE exactly. Draft a complete, ready-to-send email including
       }
       const data = await response.json();
       const replyContent = (data.output_text || '').trim();
+      if (!replyContent && Array.isArray(data.output)) {
+        const joined = data.output.map(o => o.content?.[0]?.text || o.text || '').join('\n').trim();
+        if (joined) {
+          return {
+            replyText: joined,
+            suggestedSubject: originalEmail.subject.startsWith('Re:') ? originalEmail.subject : `Re: ${originalEmail.subject}`,
+            timestamp: new Date().toISOString(),
+          };
+        }
+      }
     if (!replyContent) {
         logger.error('OpenAI response did not contain reply content (generateReply).', {tag: 'openaiService', data});
         throw new Error('OpenAI did not return reply content.');
