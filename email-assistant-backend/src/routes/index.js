@@ -223,8 +223,9 @@ router.get('/test-gpt5-mini', async (req, res) => {
       },
       body: JSON.stringify({
         model: 'gpt-5-mini',
+        instructions: 'Return exactly the string OK.',
         input: 'Say OK',
-        max_output_tokens: 20
+        max_output_tokens: 128
       }),
     });
     const text = await resp.text();
