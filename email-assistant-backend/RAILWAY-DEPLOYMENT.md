@@ -84,7 +84,7 @@ After deployment, check these endpoints:
 ### Workflows
 - **Gmail Polling**: Every 60 seconds for new emails
 - **Whitelist Learning**: Checks "white" label every 2 minutes
-- **AI Processing**: Gemini 2.0-flash + OpenAI GPT-4.1
+- **AI Processing**: OpenAI GPT-5-mini (triage) + OpenAI GPT-5 (drafting)
 
 ## 🔍 Troubleshooting
 

@@ -5,35 +5,39 @@
  * Use this to verify your Gemini API key is working correctly
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from './src/config/env.js';
 
-console.log('🔬 Testing Gemini API Connectivity');
-console.log('=================================');
+console.log('🔬 Testing OpenAI gpt-5-mini Connectivity');
+console.log('========================================');
 
-if (!config.gemini || !config.gemini.apiKey) {
-  console.log('❌ No Gemini API key found');
-  console.log('Set GEMINI_API_KEY environment variable');
+if (!config.openai || !config.openai.apiKey) {
+  console.log('❌ No OpenAI API key found');
+  console.log('Set OPENAI_API_KEY environment variable');
   process.exit(1);
 }
 
-console.log(`✅ Gemini API key found (${config.gemini.apiKey.length} characters)`);
-console.log(`   Key starts with: ${config.gemini.apiKey.substring(0, 8)}***`);
+console.log(`✅ OpenAI API key found (${config.openai.apiKey.length} characters)`);
+console.log(`   Key starts with: ${config.openai.apiKey.substring(0, 8)}***`);
 
 try {
-  const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
-  console.log('✅ GoogleGenerativeAI client created');
-
-  const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.0-flash",
-    generationConfig: { responseMimeType: "application/json" } 
-  });
-  console.log('✅ Gemini model initialized');
-
   console.log('\n🧪 Testing simple API call...');
-  const simpleResult = await model.generateContent('Return JSON with message "Hello World": {"message": "Hello World"}');
-  const simpleResponse = simpleResult.response.text();
-  console.log('✅ Simple test successful:', simpleResponse);
+  const simpleResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.openai.apiKey}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-5-mini',
+      messages: [{ role: 'user', content: 'Return JSON exactly: {"message": "Hello World"}' }],
+      temperature: 0,
+      max_tokens: 50,
+      response_format: { type: 'json_object' }
+    })
+  });
+  const simpleData = await simpleResponse.json();
+  const simpleText = simpleData.choices[0]?.message?.content;
+  console.log('✅ Simple test successful:', simpleText);
 
   console.log('\n🧪 Testing email categorization...');
   const testPrompt = `Categorize this email:
@@ -47,26 +51,36 @@ Return JSON:
   "reasoning": "explanation"
 }`;
 
-  const testResult = await model.generateContent(testPrompt);
-  const testResponse = testResult.response.text();
+  const catResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.openai.apiKey}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-5-mini',
+      messages: [{ role: 'user', content: testPrompt }],
+      temperature: 0.2,
+      max_tokens: 200,
+      response_format: { type: 'json_object' }
+    })
+  });
+  const catData = await catResponse.json();
+  const testResponse = catData.choices[0]?.message?.content;
   console.log('✅ Categorization test successful:', testResponse);
 
   console.log('\n🎉 All tests passed! Gemini API is working correctly.');
   
 } catch (error) {
-  console.log('\n❌ Gemini API test failed:');
+  console.log('\n❌ OpenAI API test failed:');
   console.log('Error:', error.message);
   console.log('Stack:', error.stack);
-  
-  if (error.message.includes('API_KEY_INVALID')) {
-    console.log('\n💡 Your API key appears to be invalid');
-    console.log('   Get a new key from: https://aistudio.google.com/app/apikey');
-  } else if (error.message.includes('quota')) {
+  if (error.message.includes('incorrect_api_key') || error.message.includes('401')) {
+    console.log('\n💡 Your OpenAI API key appears to be invalid');
+    console.log('   Set a valid OPENAI_API_KEY');
+  } else if (error.message.includes('quota') || error.message.includes('insufficient_quota')) {
     console.log('\n💡 API quota exceeded');
-    console.log('   Check your usage at: https://aistudio.google.com/app/apikey');
-  } else if (error.message.includes('model')) {
-    console.log('\n💡 Model not available');
-    console.log('   Try using "gemini-1.5-flash" instead of "gemini-2.0-flash"');
+    console.log('   Check your usage and billing in your OpenAI account');
   }
   
   process.exit(1);

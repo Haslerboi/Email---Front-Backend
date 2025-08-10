@@ -1,47 +1,9 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from '../config/env.js';
 import logger from '../utils/logger.js';
 import { isWhitelistedSpamSender } from './whitelistService.js';
 
-let genAI;
-if (config.gemini && config.gemini.apiKey) {
-  try {
-    genAI = new GoogleGenerativeAI(config.gemini.apiKey);
-    logger.info('Gemini API client initialized successfully', { 
-      tag: 'geminiService',
-      apiKeyLength: config.gemini.apiKey.length,
-      apiKeyPrefix: config.gemini.apiKey.substring(0, 8) + '***'
-    });
-    
-    // Test the API with a simple request
-    (async () => {
-      try {
-        const testModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        const testResult = await testModel.generateContent("Test connection - respond with just 'OK'");
-        logger.info('Gemini API test successful', { tag: 'geminiService' });
-      } catch (testError) {
-        logger.error('Gemini API test failed:', { 
-          error: testError.message, 
-          tag: 'geminiService' 
-        });
-      }
-    })();
-    
-  } catch (initError) {
-    logger.error('Failed to initialize Gemini API client:', { 
-      error: initError.message, 
-      tag: 'geminiService' 
-    });
-    genAI = null;
-  }
-} else {
-  logger.warn('Gemini API key not found. Gemini service will not be functional.', { 
-    tag: 'geminiService',
-    hasConfig: !!config.gemini,
-    hasApiKey: !!(config.gemini && config.gemini.apiKey),
-    apiKeyLength: config.gemini?.apiKey ? config.gemini.apiKey.length : 0
-  });
-}
+// This service previously used Google Gemini. It now uses OpenAI GPT-5-mini.
+// Keeping the filename and exported function names to avoid touching import sites.
 
 // Helper to extract JSON from Gemini's response, which might include markdown
 const extractJsonFromGeminiResponse = (text) => {
@@ -103,52 +65,57 @@ export const categorizeEmail = async (emailBody, senderEmail, emailSubject = '',
     }
   }
 
-  if (!genAI) {
-    logger.warn('Gemini API client not initialized. Using fallback categorization.', { 
+  if (!config.openai || !config.openai.apiKey) {
+    logger.warn('OpenAI API key not configured. Using fallback categorization.', {
       tag: 'geminiService',
-      hasConfig: !!config.gemini,
-      hasApiKey: !!(config.gemini && config.gemini.apiKey),
+      hasOpenAIConfig: !!config.openai,
+      hasApiKey: !!(config.openai && config.openai.apiKey),
       senderEmail: senderEmail
     });
-    
+
     // Enhanced fallback categorization logic
     const emailContent = `${emailSubject} ${emailBody} ${senderEmail}`.toLowerCase();
-    
+
     // Check for invoices/billing first
-    if (emailContent.includes('invoice') || emailContent.includes('bill') || emailContent.includes('payment') || 
-        emailContent.includes('statement') || emailContent.includes('receipt')) {
+    if (
+      emailContent.includes('invoice') ||
+      emailContent.includes('bill') ||
+      emailContent.includes('payment') ||
+      emailContent.includes('statement') ||
+      emailContent.includes('receipt')
+    ) {
       return {
         category: 'Invoices',
         reasoning: 'Fallback categorization: Contains invoice/billing keywords'
       };
     }
-    
+
     // Check for promotional/marketing content
     const spamKeywords = [
-      'unsubscribe', 'newsletter', 'marketing', 'promotion', 'sale', 'discount', 
+      'unsubscribe', 'newsletter', 'marketing', 'promotion', 'sale', 'discount',
       'offer', 'deal', 'shop now', 'buy now', 'limited time', 'exclusive',
       'click here', 'free shipping', 'save', 'off', '%', 'weekly update',
       'monthly update', 'blog post', 'new article', 'subscribe', 'follow us',
       'social media', 'instagram', 'facebook', 'twitter'
     ];
-    
+
     const hasSpamKeywords = spamKeywords.some(keyword => emailContent.includes(keyword));
-    
+
     // Check sender patterns that indicate promotional emails
     const promotionalSenders = [
-      'newsletter', 'marketing', 'promo', 'noreply', 'no-reply', 'info@', 
+      'newsletter', 'marketing', 'promo', 'noreply', 'no-reply', 'info@',
       'hello@', 'news@', 'updates@', 'support@', 'team@'
     ];
-    
+
     const isPromotionalSender = promotionalSenders.some(pattern => senderEmail.includes(pattern));
-    
+
     if (hasSpamKeywords || isPromotionalSender) {
       return {
         category: 'Spam',
         reasoning: 'Fallback categorization: Contains promotional/marketing content or sender patterns'
       };
     }
-    
+
     // Check for notification patterns
     const notificationKeywords = [
       'notification', 'alert', 'update', 'report', 'summary', 'status',
@@ -156,23 +123,23 @@ export const categorizeEmail = async (emailBody, senderEmail, emailSubject = '',
       'deployment', 'crashed', 'failed', 'build', 'deploy', 'server',
       'uptime', 'downtime', 'incident', 'maintenance'
     ];
-    
+
     const notificationSenders = [
       'github', 'slack', 'trello', 'dropbox', 'google drive', 'icloud',
       'aws', 'microsoft', 'adobe', 'zoom', 'calendly', 'railway',
       'heroku', 'vercel', 'netlify', 'cloudflare'
     ];
-    
+
     const hasNotificationKeywords = notificationKeywords.some(keyword => emailContent.includes(keyword));
     const isNotificationSender = notificationSenders.some(pattern => senderEmail.toLowerCase().includes(pattern));
-    
+
     if (hasNotificationKeywords || isNotificationSender) {
       return {
         category: 'Notifications',
         reasoning: 'Fallback categorization: Contains notification keywords or sender patterns'
       };
     }
-    
+
     // Default to Draft Email only for legitimate-looking emails
     return {
       category: 'Draft Email',
@@ -197,32 +164,7 @@ export const categorizeEmail = async (emailBody, senderEmail, emailSubject = '',
     };
   }
 
-  // Try to get the model with fallback
-  let model;
-  try {
-    model = genAI.getGenerativeModel({ 
-      model: "gemini-2.0-flash",
-      generationConfig: { responseMimeType: "application/json" } 
-    });
-  } catch (modelError) {
-    logger.warn('Failed to get gemini-2.0-flash, trying gemini-1.5-pro as fallback', { 
-      tag: 'geminiService',
-      error: modelError.message
-    });
-    try {
-      model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-pro",
-        generationConfig: { responseMimeType: "application/json" } 
-      });
-    } catch (fallbackError) {
-      logger.error('Both gemini models failed to initialize', { 
-        tag: 'geminiService',
-        primaryError: modelError.message,
-        fallbackError: fallbackError.message
-      });
-      throw new Error(`Model initialization failed: ${modelError.message}, fallback also failed: ${fallbackError.message}`);
-    }
-  }
+  // Prepare prompt for OpenAI GPT-5-mini
 
   const prompt = `You are analyzing an email for a photographer/videographer business. The email content may contain a full conversation thread with multiple messages.
 
@@ -282,23 +224,42 @@ Body: ${emailBody}
 }`;
 
   try {
-    logger.info('Sending request to Gemini API for new categorization system...', { 
+    logger.info('Sending request to OpenAI (gpt-5-mini) for categorization...', {
       tag: 'geminiService',
       senderEmail: senderEmail,
       emailSubject: emailSubject,
       emailBodyLength: emailBody ? emailBody.length : 0,
       emailSubjectLength: emailSubject ? emailSubject.length : 0
     });
-    
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const responseText = response.text();
-    
-    logger.info('Received response from Gemini API.', { 
+
+    const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.openai.apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-5-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.2,
+        max_tokens: 500,
+        response_format: { type: 'json_object' }
+      })
+    });
+
+    if (!aiResponse.ok) {
+      const errorBody = await aiResponse.text();
+      throw new Error(`OpenAI API error: ${aiResponse.status} ${aiResponse.statusText} - ${errorBody}`);
+    }
+
+    const aiData = await aiResponse.json();
+    const responseText = aiData.choices[0]?.message?.content ?? '';
+
+    logger.info('Received response from OpenAI (gpt-5-mini).', {
       tag: 'geminiService',
       responseLength: responseText ? responseText.length : 0
     });
-    
+
     const parsedResult = extractJsonFromGeminiResponse(responseText);
     logger.info('Successfully parsed Gemini response.', { 
       tag: 'geminiService', 
