@@ -242,7 +242,8 @@ Body: ${emailBody}
         model: 'gpt-5-mini',
         instructions: 'You are a strict JSON generator. Return ONLY a JSON object matching the requested schema. No prose, no code fences.',
         input: `${prompt}\n\nReturn ONLY a JSON object (no code fences, no prose).`,
-        max_output_tokens: 500,
+        reasoning: { effort: 'low' },
+        max_output_tokens: 800,
         response_format: {
           type: 'json_schema',
           json_schema: {
@@ -283,7 +284,13 @@ Body: ${emailBody}
       responseLength: responseText ? responseText.length : 0
     });
 
-    const parsedResult = parsed ?? extractJsonFromAIResponse(responseText);
+    let parsedResult;
+    try {
+      parsedResult = parsed ?? extractJsonFromAIResponse(responseText);
+    } catch (parseErr) {
+      logger.error(`Categorization parse failure. Raw snippet: ${String(responseText).slice(0, 500)}`);
+      throw parseErr;
+    }
     logger.info('Successfully parsed AI response.', { 
       tag: 'geminiService', 
       category: parsedResult.category,
