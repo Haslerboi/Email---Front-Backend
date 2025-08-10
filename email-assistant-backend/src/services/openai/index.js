@@ -182,7 +182,7 @@ export const generateGuidedReply = async (systemGuide, originalEmail, answeredQu
     qaBlock = "\n\n(No specific answers were provided by the business owner for this reply.)";
   }
 
-  const userPromptContent = `The following is an email thread. Please focus on crafting a reply to the newest message from "${originalEmail.sender}".
+  const userPromptContent = `The following is an email thread. Draft a complete, ready-to-send reply to the newest message from "${originalEmail.sender}".
 
 --- FULL EMAIL THREAD RECEIVED (NEWEST MESSAGE IS TYPICALLY AT THE TOP OR NOT INDENTED) ---
 From: ${originalEmail.sender}
@@ -192,15 +192,22 @@ Body (may contain full thread):
 ${originalEmail.body}
 --- END OF FULL EMAIL THREAD ---${qaBlock}
 
-Based on the newest message in the thread from ${originalEmail.sender} and the provided "SPECIFIC ANSWERS FROM BUSINESS OWNER" (if any), please compose ONLY the body of the reply email.`;
+Follow the SYSTEM GUIDE exactly. Requirements:
+- Write a complete email including greeting, acknowledgment, body, and closing/sign-off.
+- Do not include a subject line.
+- Do not use markdown formatting, code blocks, or headings.
+- Keep content plain text suitable for an email draft in Gmail.
+- If pricing is mentioned in the SYSTEM GUIDE as optional or to be left blank, do not invent numbers; leave blanks where appropriate.`;
 
   const messages = [
     { role: 'system', content: systemGuide }, // systemGuide comes from templateManager
     { role: 'user', content: userPromptContent }
   ];
 
-  const promptForLogging = `System Prompt: ${systemGuide.substring(0,100)}... User Prompt: ${userPromptContent.substring(0,200)}...`;
-  logger.debug('Sending prompt to GPT-5:', {tag: 'openaiService', promptContext: promptForLogging});
+  const promptForLogging = `System Prompt: ${systemGuide.substring(0,120)}... User Prompt: ${userPromptContent.substring(0,240)}...`;
+  if (process.env.OPENAI_LOG_PROMPTS === 'true') {
+    logger.debug('Sending prompt to GPT-5:', {tag: 'openaiService', promptContext: promptForLogging});
+  }
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -212,7 +219,7 @@ Based on the newest message in the thread from ${originalEmail.sender} and the p
         body: JSON.stringify({
           model: 'gpt-5', 
         messages: messages,
-        temperature: 0.6, 
+        temperature: 0.3, 
         max_tokens: 1500 
       })
     });
@@ -288,16 +295,17 @@ Body:
 ${originalEmail.body}
 ${qaBlock}
 
-Please write only the body of the reply email.`;
+Follow the SYSTEM GUIDE exactly. Draft a complete, ready-to-send email including greeting, acknowledgment, body, and closing/sign-off. Do not include a subject line. Do not use markdown formatting or code blocks. Keep content plain text suitable for Gmail.`;
 
   const messages = [
     { role: 'system', content: effectiveSystemGuide },
     { role: 'user', content: userPrompt }
   ];
 
-  // ... (Make fetch call to OpenAI API, similar to generateGuidedReply, using 'messages') ...
-  // ... (Handle response and errors) ...
-  // This part needs to be completed based on the structure of generateGuidedReply
+  const promptForLogging = `System Prompt: ${effectiveSystemGuide.substring(0,120)}... User Prompt: ${userPrompt.substring(0,240)}...`;
+  if (process.env.OPENAI_LOG_PROMPTS === 'true') {
+    logger.debug('Sending prompt to GPT-5 (generateReply):', {tag: 'openaiService', promptContext: promptForLogging});
+  }
     try {
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -306,10 +314,10 @@ Please write only the body of the reply email.`;
           'Authorization': `Bearer ${config.openai.apiKey}`
         },
         body: JSON.stringify({
-        model: 'gpt-5', 
-        messages: messages,
-          temperature: 0.7,
-          max_tokens: 800
+          model: 'gpt-5', 
+          messages: messages,
+          temperature: 0.3,
+          max_tokens: 1200
         })
       });
       if (!response.ok) {
