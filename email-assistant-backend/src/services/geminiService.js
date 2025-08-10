@@ -242,7 +242,6 @@ Body: ${emailBody}
         model: 'gpt-5-mini',
         instructions: 'You are a strict JSON generator. Return ONLY a JSON object matching the requested schema. No prose, no code fences.',
         input: `${prompt}\n\nReturn ONLY a JSON object (no code fences, no prose).`,
-        temperature: 0.2,
         max_output_tokens: 500,
         response_format: {
           type: 'json_schema',
@@ -315,6 +314,9 @@ Body: ${emailBody}
       hasGenAI: !!genAI,
       apiKeyLength: config.gemini?.apiKey ? config.gemini.apiKey.length : 0
     };
+
+    // Ensure the raw error message is visible even if structured logging collapses objects
+    logger.error(`Categorization error message: ${error.message}`);
 
     // Check for specific error types
     if (error.message.includes('API_KEY')) {
