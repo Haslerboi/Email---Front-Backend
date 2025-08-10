@@ -5,8 +5,8 @@ import { isWhitelistedSpamSender } from './whitelistService.js';
 // This service previously used Google Gemini. It now uses OpenAI GPT-5-mini.
 // Keeping the filename and exported function names to avoid touching import sites.
 
-// Helper to extract JSON from Gemini's response, which might include markdown
-const extractJsonFromGeminiResponse = (text) => {
+// Helper to extract JSON from AI response which might include markdown
+const extractJsonFromAIResponse = (text) => {
   try {
     const jsonRegex = /```(?:json)?\s*({[\s\S]*?})\s*```/;
     const match = text.match(jsonRegex);
@@ -16,13 +16,13 @@ const extractJsonFromGeminiResponse = (text) => {
     // If not in markdown, try to parse directly (Gemini sometimes returns clean JSON)
     return JSON.parse(text);
   } catch (e) {
-    logger.error('Failed to parse JSON from Gemini response:', { error: e.message, text });
-    throw new Error('Failed to parse JSON from Gemini response.');
+    logger.error('Failed to parse JSON from AI response:', { error: e.message, text });
+    throw new Error('Failed to parse JSON from AI response.');
   }
 };
 
 /**
- * Uses Gemini to categorize emails into the new 4-category system
+ * Categorize emails into the 4-category system using OpenAI
  * @param {string} emailBody - The text content of the email.
  * @param {string} senderEmail - The sender's email address.
  * @param {string} emailSubject - The email subject line.
@@ -260,8 +260,8 @@ Body: ${emailBody}
       responseLength: responseText ? responseText.length : 0
     });
 
-    const parsedResult = extractJsonFromGeminiResponse(responseText);
-    logger.info('Successfully parsed Gemini response.', { 
+    const parsedResult = extractJsonFromAIResponse(responseText);
+    logger.info('Successfully parsed AI response.', { 
       tag: 'geminiService', 
       category: parsedResult.category,
       reasoning: parsedResult.reasoning 
@@ -273,7 +273,7 @@ Body: ${emailBody}
 
     return {
       category: category,
-      reasoning: parsedResult.reasoning || 'No reasoning provided by Gemini.'
+      reasoning: parsedResult.reasoning || 'No reasoning provided by the model.'
     };
 
   } catch (error) {
@@ -294,22 +294,22 @@ Body: ${emailBody}
 
     // Check for specific error types
     if (error.message.includes('API_KEY')) {
-      logger.error('Gemini API Key error - check configuration:', errorDetails);
+      logger.error('OpenAI API Key error - check configuration:', errorDetails);
     } else if (error.message.includes('QUOTA') || error.message.includes('quota')) {
-      logger.error('Gemini API Quota exceeded:', errorDetails);
+      logger.error('OpenAI API Quota exceeded:', errorDetails);
     } else if (error.message.includes('RATE_LIMIT') || error.message.includes('rate')) {
-      logger.error('Gemini API Rate limit hit:', errorDetails);
+      logger.error('OpenAI API Rate limit hit:', errorDetails);
     } else if (error.message.includes('model')) {
-      logger.error('Gemini Model error - check model availability:', errorDetails);
+      logger.error('OpenAI Model error - check model availability:', errorDetails);
     } else if (error.message.includes('network') || error.message.includes('timeout')) {
-      logger.error('Gemini Network/timeout error:', errorDetails);
+      logger.error('OpenAI Network/timeout error:', errorDetails);
     } else {
-      logger.error('Unknown Gemini API error:', errorDetails);
+      logger.error('Unknown OpenAI API error:', errorDetails);
     }
 
     return {
       category: 'Draft Email',
-      reasoning: `Gemini API error: ${error.message}, defaulting to Draft Email for safety.`
+      reasoning: `Categorization error: ${error.message}, defaulting to Draft Email for safety.`
     };
   }
 };

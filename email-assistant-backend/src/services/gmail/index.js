@@ -566,11 +566,11 @@ export const checkForNewEmails = async () => {
         date: email.date || new Date().toISOString()
       };
       
-      logger.info('Calling Gemini for email categorization...', {tag: 'gmailService', emailId: sanitizedEmail.id});
+      logger.info('Calling OpenAI (gpt-5-mini) for email categorization...', {tag: 'gmailService', emailId: sanitizedEmail.id});
       let geminiResult;
       try {
         geminiResult = await categorizeEmail(sanitizedEmail.body, sanitizedEmail.sender, sanitizedEmail.subject, sanitizedEmail.headers);
-        logger.info('Gemini categorization result:', {tag: 'gmailService', emailId: sanitizedEmail.id, category: geminiResult.category});
+        logger.info('Categorization result (OpenAI):', {tag: 'gmailService', emailId: sanitizedEmail.id, category: geminiResult.category});
       } catch (categorizationError) {
         logger.error('Failed to categorize email, using fallback:', {
           tag: 'gmailService', 
