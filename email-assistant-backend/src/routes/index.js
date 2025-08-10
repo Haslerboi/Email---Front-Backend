@@ -224,8 +224,7 @@ router.get('/test-gpt5-mini', async (req, res) => {
       body: JSON.stringify({
         model: 'gpt-5-mini',
         input: 'Say OK',
-        max_output_tokens: 20,
-        temperature: 0,
+        max_output_tokens: 20
       }),
     });
     const text = await resp.text();
