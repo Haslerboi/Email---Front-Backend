@@ -220,7 +220,7 @@ Follow the SYSTEM GUIDE exactly. Requirements:
         model: 'gpt-5',
         messages: messages,
         temperature: 0.3,
-        max_tokens: 1500
+        max_completion_tokens: 1500
       })
     });
 
@@ -337,12 +337,12 @@ Follow the SYSTEM GUIDE exactly. Draft a complete, ready-to-send email including
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${config.openai.apiKey}`
         },
-        body: JSON.stringify({
-          model: 'gpt-5',
-          messages: messages,
-          temperature: 0.3,
-          max_tokens: 1200
-        })
+          body: JSON.stringify({
+            model: 'gpt-5',
+            messages: messages,
+            temperature: 0.3,
+            max_completion_tokens: 1200
+          })
       });
       if (!response.ok) {
         const raw = await response.text();

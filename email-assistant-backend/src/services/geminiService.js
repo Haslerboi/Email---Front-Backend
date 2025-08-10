@@ -240,7 +240,7 @@ Body: ${emailBody}
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: 'user', content: `${prompt}\n\nPlease respond in valid JSON.` }],
         temperature: 0.2,
         max_tokens: 500,
         response_format: { type: 'json_object' }
