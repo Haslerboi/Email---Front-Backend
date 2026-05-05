@@ -26,7 +26,7 @@ router.get('/', (req, res) => {
       'pending-notifications': '/api/pending-notifications',
       'test-gemini': '/api/test-gemini (POST - test Gemini categorization)',
       'test-gpt5-mini': '/api/test-gpt5-mini (GET - simple OpenAI Responses API check)',
-      'test-categorization': '/api/test-categorization (GET - run categorization prompt via gpt-5-mini and return raw)'
+      'test-categorization': '/api/test-categorization (GET - run categorization prompt via gpt-5.4-mini and return raw)'
     },
     categories: [
       'Draft Email - Legitimate business emails left unread in inbox for manual response',
@@ -223,7 +223,7 @@ router.get('/test-gpt5-mini', async (req, res) => {
         Authorization: `Bearer ${config.openai.apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-5-mini',
+        model: 'gpt-5.4-mini',
         instructions: 'Return exactly the string OK. Do not include any reasoning.',
         input: 'Say OK',
         reasoning: { effort: 'low' },
@@ -257,7 +257,7 @@ router.get('/test-categorization', async (req, res) => {
         Authorization: `Bearer ${config.openai.apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-5-mini',
+        model: 'gpt-5.4-mini',
         instructions: 'You are a strict JSON generator. Return ONLY a JSON object matching the requested schema. No prose, no code fences.',
         input: `${prompt}`,
         reasoning: { effort: 'low' },

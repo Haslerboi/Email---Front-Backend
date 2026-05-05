@@ -490,7 +490,7 @@ export const checkForNewEmails = async () => {
         date: email.date || new Date().toISOString()
       };
       
-      logger.info('Calling OpenAI (gpt-5-mini) for email categorization...', {tag: 'gmailService', emailId: sanitizedEmail.id});
+      logger.info('Calling OpenAI (gpt-5.4-mini) for email categorization...', {tag: 'gmailService', emailId: sanitizedEmail.id});
       let geminiResult;
       try {
         geminiResult = await categorizeEmail(sanitizedEmail.body, sanitizedEmail.sender, sanitizedEmail.subject, sanitizedEmail.headers);

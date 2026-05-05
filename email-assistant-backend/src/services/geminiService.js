@@ -2,7 +2,7 @@ import { config } from '../config/env.js';
 import logger from '../utils/logger.js';
 import { isWhitelistedSpamSender } from './whitelistService.js';
 
-// This service previously used Google Gemini. It now uses OpenAI GPT-5-mini.
+// This service previously used Google Gemini. It now uses OpenAI GPT-5.4-mini.
 // Keeping the filename and exported function names to avoid touching import sites.
 
 // Helper to extract JSON from AI response which might include markdown
@@ -164,7 +164,7 @@ export const categorizeEmail = async (emailBody, senderEmail, emailSubject = '',
     };
   }
 
-  // Prepare prompt for OpenAI GPT-5-mini
+  // Prepare prompt for OpenAI GPT-5.4-mini
 
   const prompt = `You are analyzing an email for a photographer/videographer business. The email content may contain a full conversation thread with multiple messages.
 
@@ -224,7 +224,7 @@ Body: ${emailBody}
 }`;
 
   try {
-    logger.info('Sending request to OpenAI Responses API (gpt-5-mini) for categorization...', {
+    logger.info('Sending request to OpenAI Responses API (gpt-5.4-mini) for categorization...', {
       tag: 'geminiService',
       senderEmail: senderEmail,
       emailSubject: emailSubject,
@@ -239,7 +239,7 @@ Body: ${emailBody}
         'Authorization': `Bearer ${config.openai.apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-5-mini',
+        model: 'gpt-5.4-mini',
         instructions: 'You are a strict JSON generator. Return ONLY a JSON object matching the requested schema. No prose, no code fences.',
         input: `${prompt}\n\nReturn ONLY a JSON object (no code fences, no prose).`,
         reasoning: { effort: 'low' },
@@ -285,7 +285,7 @@ Body: ${emailBody}
       }
     }
 
-    logger.info('Received response from OpenAI Responses API (gpt-5-mini).', {
+    logger.info('Received response from OpenAI Responses API (gpt-5.4-mini).', {
       tag: 'geminiService',
       responseLength: responseText ? responseText.length : 0
     });
