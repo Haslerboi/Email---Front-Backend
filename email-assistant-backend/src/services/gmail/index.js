@@ -1,14 +1,8 @@
 // Gmail service for interacting with Gmail API
 import { config } from '../../config/env.js';
 import { google } from 'googleapis';
-import { classifyEmailForPhotographer, generateReply as openAIGenerateReply, generateGuidedReply } from '../openai/index.js';
 import { categorizeEmail } from '../geminiService.js';
-import { getGuidanceForCategory } from '../templateManager.js';
-import TaskStateManager from '../email-state.js';
-import { v4 as uuidv4 } from 'uuid';
 import logger from '../../utils/logger.js';
-import calendarService from '../calendarService.js';
-import * as chrono from 'chrono-node';
 import { addWhitelistedSender } from '../whitelistService.js';
 import ProcessedEmailsService from '../processedEmails.js';
 import PendingNotificationsService from '../pendingNotifications.js';
@@ -320,76 +314,6 @@ const markAsRead = async (messageId) => {
 };
 
 /**
- * Create a draft reply to an email
- * @param {string} threadId - The thread ID to reply to
- * @param {string} to - Recipient email address
- * @param {string} subject - Email subject
- * @param {string} messageText - Email body content
- * @returns {Promise<Object>} - Created draft data
- */
-const createDraft = async (threadId, to, subject, messageText) => {
-  try {
-    console.log(`Creating draft for thread: ${threadId}`);
-    console.log(`To: ${to}`);
-    console.log(`Subject: ${subject}`);
-    console.log(`Message length: ${messageText.length} chars`);
-    
-    if (!threadId) {
-      console.error('No threadId provided to createDraft');
-      throw new Error('ThreadId is required for creating a draft');
-    }
-    
-    if (!to) {
-      console.error('No recipient (to) provided to createDraft');
-      throw new Error('Recipient email is required for creating a draft');
-    }
-    
-    const gmail = await getGmailClient();
-    console.log('Gmail client created successfully');
-    
-    // Ensure subject has Re: prefix if not already present
-    const fullSubject = subject.startsWith('Re:') ? subject : `Re: ${subject}`;
-    
-    // Construct email content
-    const emailContent = [
-      `To: ${to}`,
-      `Subject: ${fullSubject}`,
-      'Content-Type: text/plain; charset=utf-8',
-      'MIME-Version: 1.0',
-      '',
-      messageText
-    ].join('\r\n');
-    
-    console.log('Email content constructed, preparing to create draft');
-    
-    // Create the draft
-    console.log('Sending draft creation request to Gmail API...');
-    const response = await gmail.users.drafts.create({
-      userId: 'me',
-      requestBody: {
-        message: {
-          threadId,
-          raw: Buffer.from(emailContent).toString('base64url')
-        }
-      }
-    });
-    
-    if (!response || !response.data) {
-      console.error('Empty response from Gmail API draft creation');
-      throw new Error('Failed to create draft: Empty response from Gmail API');
-    }
-    
-    console.log(`✅ Draft created successfully with ID: ${response.data.id || 'unknown'}`);
-    console.log(`Draft created: "${fullSubject}" for thread ${threadId}`);
-    return response.data;
-  } catch (error) {
-    console.error('❌ Error creating draft:', error);
-    console.error('Error details:', error.stack || error);
-    throw new Error(`Failed to create draft: ${error.message}`);
-  }
-};
-
-/**
  * Check for new emails in the 'white' label and process them for whitelisting
  */
 /**
@@ -588,32 +512,10 @@ export const checkForNewEmails = async () => {
       // Process based on category
       switch (geminiResult.category) {
         case 'Studio Ninja Wedding Enquiry':
-          logger.info(`Processing Studio Ninja Wedding Enquiry: "${sanitizedEmail.subject}" - Reply-to: ${sanitizedEmail.replyTo}`, {tag: 'gmailService'});
-          try {
-            // Get wedding enquiry system guide
-            const systemGuide = await getGuidanceForCategory('Studio Ninja Wedding Enquiry');
-            
-            // Generate reply using OpenAI with wedding-specific prompt
-            const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
-            
-            if (draftResult && draftResult.replyText) {
-              // Create draft reply to the reply-to address (not the no-reply sender)
-              const replyToAddress = sanitizedEmail.replyTo || sanitizedEmail.sender;
-              
-              await createDraft(
-                sanitizedEmail.threadId,
-                replyToAddress, // Use reply-to address instead of sender
-                sanitizedEmail.subject,
-                draftResult.replyText
-              );
-              logger.info(`Wedding enquiry draft created for "${sanitizedEmail.subject}" - Reply to: ${replyToAddress} - keeping original unread`, {tag: 'gmailService'});
-              // NOTE: Intentionally NOT marking as read so user can see the original wedding enquiry
-            } else {
-              logger.warn('Failed to generate wedding enquiry draft reply - keeping email unread for manual handling', {tag: 'gmailService', emailId: sanitizedEmail.id});
-            }
-          } catch (draftError) {
-            logger.error('Error processing Studio Ninja Wedding Enquiry - keeping unread for manual handling:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: draftError.message});
-          }
+          logger.info(
+            `Processing Studio Ninja Wedding Enquiry: "${sanitizedEmail.subject}" - drafting disabled, leaving unread in inbox`,
+            { tag: 'gmailService', emailId: sanitizedEmail.id }
+          );
           break;
 
         case 'Studio Ninja System':
@@ -628,33 +530,10 @@ export const checkForNewEmails = async () => {
           break;
 
         case 'Draft Email':
-          logger.info(`Processing Draft Email: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
-          try {
-            // Get system guide for draft emails
-            const systemGuide = await getGuidanceForCategory('Draft Email');
-            
-            // Generate reply using OpenAI
-            const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
-            
-            if (draftResult && draftResult.replyText) {
-              // Create draft in Gmail
-              await createDraft(
-                sanitizedEmail.threadId,
-                sanitizedEmail.sender,
-                sanitizedEmail.subject,
-                draftResult.replyText
-              );
-              logger.info(`Draft created for email "${sanitizedEmail.subject}" - keeping original email unread for user review`, {tag: 'gmailService'});
-              // NOTE: Intentionally NOT marking as read so user can see the original email
-              // The email is already marked as processed to prevent duplicate drafts
-            } else {
-              logger.warn('Failed to generate draft reply - keeping email unread for manual handling', {tag: 'gmailService', emailId: sanitizedEmail.id});
-              // NOTE: Not marking as read so user can handle manually
-            }
-          } catch (draftError) {
-            logger.error('Error processing Draft Email - keeping unread for manual handling:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: draftError.message});
-            // NOTE: Not marking as read so user can handle the error case manually
-          }
+          logger.info(
+            `Processing Draft Email: "${sanitizedEmail.subject}" - drafting disabled, leaving unread in inbox`,
+            { tag: 'gmailService', emailId: sanitizedEmail.id }
+          );
           break;
 
         case 'Invoices':
@@ -702,20 +581,10 @@ export const checkForNewEmails = async () => {
           break;
 
         default:
-          logger.warn(`Unknown category "${geminiResult.category}", treating as Draft Email`, {tag: 'gmailService'});
-          // Fallback to Draft Email processing
-          try {
-            const systemGuide = await getGuidanceForCategory('Draft Email');
-            const draftResult = await openAIGenerateReply(sanitizedEmail, null, systemGuide);
-            if (draftResult && draftResult.replyText) {
-              await createDraft(sanitizedEmail.threadId, sanitizedEmail.sender, sanitizedEmail.subject, draftResult.replyText);
-              logger.info(`Draft created for unknown category email - keeping unread for user review`, {tag: 'gmailService'});
-            }
-            // NOTE: Not marking as read so user can see and handle unknown category emails
-          } catch (defaultError) {
-            logger.error('Error in default case processing - keeping unread for manual handling:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: defaultError.message});
-            // NOTE: Not marking as read so user can handle the error case manually
-          }
+          logger.warn(
+            `Unknown category "${geminiResult.category}". Drafting disabled, leaving unread in inbox.`,
+            { tag: 'gmailService', emailId: sanitizedEmail.id }
+          );
           break;
       }
     }
@@ -732,7 +601,6 @@ export {
   getGmailClient,
   fetchUnreadEmails,
   markAsRead,
-  createDraft,
   getOrCreateLabel,
   moveToLabel,
   fetchEmailsFromLabel,

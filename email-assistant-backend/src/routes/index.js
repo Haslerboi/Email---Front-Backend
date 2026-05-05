@@ -29,8 +29,8 @@ router.get('/', (req, res) => {
       'test-categorization': '/api/test-categorization (GET - run categorization prompt via gpt-5-mini and return raw)'
     },
     categories: [
-      'Draft Email - Automatic draft creation for legitimate business emails',
-      'Studio Ninja Wedding Enquiry - Special handling for wedding enquiries with reply-to field (uses wedding-specific prompt)',
+      'Draft Email - Legitimate business emails left unread in inbox for manual response',
+      'Studio Ninja Wedding Enquiry - Special handling for wedding enquiries with reply-to field (left unread for manual response)',
       'Studio Ninja System - System emails from Studio Ninja without reply-to (mark as read, no processing)',
       'Invoices - Automatic filing to Invoices folder',
       'Spam - Automatic move to Email Prison',
