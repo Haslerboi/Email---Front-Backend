@@ -3,7 +3,6 @@ import { config } from '../../config/env.js';
 import { google } from 'googleapis';
 import { categorizeEmail } from '../geminiService.js';
 import logger from '../../utils/logger.js';
-import { addWhitelistedSender } from '../whitelistService.js';
 import ProcessedEmailsService from '../processedEmails.js';
 import PendingNotificationsService from '../pendingNotifications.js';
 
@@ -101,85 +100,6 @@ const moveToLabel = async (messageId, labelName) => {
   }
 };
 
-/**
- * Fetch emails from a specific label
- * @param {string} labelName - The label name to fetch from
- * @param {number} maxResults - Maximum number of emails to fetch
- * @returns {Promise<Array>} - Array of email objects
- */
-const fetchEmailsFromLabel = async (labelName, maxResults = 10) => {
-  try {
-    const gmail = await getGmailClient();
-    const labelId = await getOrCreateLabel(labelName);
-    
-    const listResponse = await gmail.users.messages.list({
-      userId: 'me',
-      labelIds: [labelId],
-      maxResults: maxResults
-    });
-
-    const messages = listResponse.data.messages || [];
-    if (!messages.length) return [];
-
-    const emails = await Promise.all(
-      messages.map(async (message) => {
-        const response = await gmail.users.messages.get({ userId: 'me', id: message.id });
-        const email = response.data;
-        const headers = email.payload.headers;
-
-        const getHeader = (name) => {
-          const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());
-          return header ? header.value : '';
-        };
-
-        return {
-          id: email.id,
-          threadId: email.threadId,
-          subject: getHeader('subject'),
-          sender: getHeader('from'),
-          recipient: getHeader('to'),
-          date: getHeader('date'),
-          snippet: email.snippet,
-          labels: email.labelIds || []
-        };
-      })
-    );
-
-    return emails;
-  } catch (error) {
-    logger.error(`Error fetching emails from label ${labelName}:`, { error: error.message, tag: 'gmailService' });
-    throw new Error(`Failed to fetch emails from label: ${error.message}`);
-  }
-};
-
-/**
- * Move an email back to inbox and mark as read
- * @param {string} messageId - The message ID to move back
- * @param {string} fromLabelName - The label to remove the email from
- * @returns {Promise<void>}
- */
-const moveBackToInbox = async (messageId, fromLabelName) => {
-  try {
-    const gmail = await getGmailClient();
-    const labelId = await getOrCreateLabel(fromLabelName);
-    
-    // Add INBOX label, remove the source label, and mark as read
-    await gmail.users.messages.modify({
-      userId: 'me',
-      id: messageId,
-      requestBody: {
-        addLabelIds: ['INBOX'],
-        removeLabelIds: [labelId, 'UNREAD']
-      }
-    });
-    
-    logger.info(`Moved email ${messageId} back to inbox from ${fromLabelName} and marked as read`, { tag: 'gmailService' });
-  } catch (error) {
-    logger.error(`Error moving email ${messageId} back to inbox:`, { error: error.message, tag: 'gmailService' });
-    throw new Error(`Failed to move email back to inbox: ${error.message}`);
-  }
-};
-
 const fetchUnreadEmails = async (maxResults = 5, newerThanMinutes = 5) => {
   try {
     const gmail = await getGmailClient();
@@ -220,7 +140,7 @@ const fetchUnreadEmails = async (maxResults = 5, newerThanMinutes = 5) => {
           return header ? header.value : '';
         };
 
-        // Extract all headers for Studio Ninja processing
+        // Extract all headers for categorization context
         const allHeaders = {};
         headers.forEach(header => {
           allHeaders[header.name.toLowerCase()] = header.value;
@@ -242,7 +162,7 @@ const fetchUnreadEmails = async (maxResults = 5, newerThanMinutes = 5) => {
           subject: getHeader('subject'),
           sender: getHeader('from'),
           recipient: getHeader('to'),
-          replyTo: getHeader('reply-to'), // Extract reply-to for Studio Ninja
+          replyTo: getHeader('reply-to'),
           date: getHeader('date'),
           snippet: email.snippet,
           body: decodedBody,
@@ -314,9 +234,6 @@ const markAsRead = async (messageId) => {
 };
 
 /**
- * Check for new emails in the 'white' label and process them for whitelisting
- */
-/**
  * Process pending notifications and move ones that are ready (older than 5 minutes)
  */
 export const processPendingNotifications = async () => {
@@ -372,50 +289,6 @@ export const processPendingNotifications = async () => {
       error: error.message,
       stack: error.stack
     });
-  }
-};
-
-export const checkWhiteLabelForUpdates = async () => {
-  logger.info('Checking white label for new emails to whitelist...', { tag: 'gmailService' });
-  try {
-    const whiteEmails = await fetchEmailsFromLabel('white', 20);
-    
-    if (!whiteEmails || !whiteEmails.length) {
-      logger.info('No emails found in white label', { tag: 'gmailService' });
-      return;
-    }
-
-    for (const email of whiteEmails) {
-      logger.info(`Processing email from white label: ${email.sender}`, { tag: 'gmailService' });
-      
-      try {
-        // Add sender to whitelist
-        await addWhitelistedSender(email.sender);
-        
-        // Move email back to inbox and mark as read
-        await moveBackToInbox(email.id, 'white');
-        
-        logger.info(`Successfully processed white label email from ${email.sender}`, { tag: 'gmailService' });
-      } catch (emailError) {
-        logger.error(`Error processing individual email from white label:`, { 
-          emailId: email.id, 
-          sender: email.sender,
-          error: emailError.message,
-          tag: 'gmailService' 
-        });
-      }
-    }
-  } catch (error) {
-    // Don't log as error if it's just that the white label doesn't exist yet
-    if (error.message.includes('Failed to get/create label white')) {
-      logger.info('White label does not exist yet, will be created when first email is added', { tag: 'gmailService' });
-    } else {
-      logger.error('Error processing white label emails:', { 
-        error: error.message, 
-        stack: error.stack,
-        tag: 'gmailService' 
-      });
-    }
   }
 };
 
@@ -485,8 +358,7 @@ export const checkForNewEmails = async () => {
         body: email.body || '',
         sender: email.sender || '[Unknown Sender]',
         recipient: email.recipient || '',
-        replyTo: email.replyTo || '', // Include reply-to for Studio Ninja
-        headers: email.headers || {}, // Include all headers
+        headers: email.headers || {},
         date: email.date || new Date().toISOString()
       };
       
@@ -502,36 +374,18 @@ export const checkForNewEmails = async () => {
           error: categorizationError.message,
           stack: categorizationError.stack
         });
-        // Fallback to Draft Email for safety
+        // Fallback to Reply Needed for safety
         geminiResult = {
-          category: 'Draft Email',
-          reasoning: 'Categorization failed, treating as Draft Email for safety'
+          category: 'Reply Needed',
+          reasoning: 'Categorization failed, treating as Reply Needed for safety'
         };
       }
 
       // Process based on category
       switch (geminiResult.category) {
-        case 'Studio Ninja Wedding Enquiry':
+        case 'Reply Needed':
           logger.info(
-            `Processing Studio Ninja Wedding Enquiry: "${sanitizedEmail.subject}" - drafting disabled, leaving unread in inbox`,
-            { tag: 'gmailService', emailId: sanitizedEmail.id }
-          );
-          break;
-
-        case 'Studio Ninja System':
-          logger.info(`Processing Studio Ninja System email: "${sanitizedEmail.subject}" - marking as read and leaving in inbox`, {tag: 'gmailService'});
-          try {
-            // Just mark as read and leave in inbox - no further processing needed
-            await markAsRead(sanitizedEmail.id);
-            logger.info(`Successfully marked Studio Ninja system email as read`, {tag: 'gmailService'});
-          } catch (systemError) {
-            logger.error('Error marking Studio Ninja system email as read:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: systemError.message});
-          }
-          break;
-
-        case 'Draft Email':
-          logger.info(
-            `Processing Draft Email: "${sanitizedEmail.subject}" - drafting disabled, leaving unread in inbox`,
+            `Processing Reply Needed: "${sanitizedEmail.subject}" - leaving unread in inbox`,
             { tag: 'gmailService', emailId: sanitizedEmail.id }
           );
           break;
@@ -570,19 +424,9 @@ export const checkForNewEmails = async () => {
           }
           break;
 
-        case 'Whitelisted Spam':
-          logger.info(`Marking whitelisted spam as read: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
-          try {
-            await markAsRead(sanitizedEmail.id);
-            logger.info(`Successfully marked whitelisted spam as read`, {tag: 'gmailService'});
-          } catch (whitelistError) {
-            logger.error('Error marking whitelisted spam as read:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: whitelistError.message});
-          }
-          break;
-
         default:
           logger.warn(
-            `Unknown category "${geminiResult.category}". Drafting disabled, leaving unread in inbox.`,
+            `Unknown category "${geminiResult.category}". Leaving unread in inbox for manual review.`,
             { tag: 'gmailService', emailId: sanitizedEmail.id }
           );
           break;
@@ -602,7 +446,5 @@ export {
   fetchUnreadEmails,
   markAsRead,
   getOrCreateLabel,
-  moveToLabel,
-  fetchEmailsFromLabel,
-  moveBackToInbox
+  moveToLabel
 };

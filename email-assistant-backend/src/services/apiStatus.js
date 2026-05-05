@@ -85,7 +85,7 @@ export async function getApiStatus() {
     status: allHealthy ? 'connected' : 'degraded',
     message: allHealthy ? 'API is healthy and configured - New Categorization System v2.0' : 'One or more API subsystems have issues or are not configured',
     version: '2.0.0',
-    categories: ['Draft Email', 'Invoices', 'Spam', 'Whitelisted Spam'],
+    categories: ['Reply Needed', 'Invoices', 'Spam', 'Notifications'],
     details
   };
 } 

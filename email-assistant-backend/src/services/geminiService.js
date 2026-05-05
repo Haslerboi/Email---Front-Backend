@@ -1,6 +1,5 @@
 import { config } from '../config/env.js';
 import logger from '../utils/logger.js';
-import { isWhitelistedSpamSender } from './whitelistService.js';
 
 // This service previously used Google Gemini. It now uses OpenAI GPT-5.4-mini.
 // Keeping the filename and exported function names to avoid touching import sites.
@@ -30,41 +29,6 @@ const extractJsonFromAIResponse = (text) => {
  * @returns {Promise<Object>} - An object containing {category, reasoning}
  */
 export const categorizeEmail = async (emailBody, senderEmail, emailSubject = '', emailHeaders = null) => {
-  // Check for Studio Ninja emails first (before any other processing)
-  if (senderEmail && senderEmail.toLowerCase().includes('no-reply@studioninja.app')) {
-    logger.info('Detected Studio Ninja email, applying special categorization', {
-      tag: 'geminiService',
-      senderEmail: senderEmail,
-      emailSubject: emailSubject
-    });
-    
-    // Check if email has reply-to field (indicates wedding enquiry)
-    const hasReplyTo = emailHeaders && emailHeaders['reply-to'];
-    const hasFrom = emailHeaders && emailHeaders['from'];
-    const hasTo = emailHeaders && emailHeaders['to'];
-    
-    if (hasReplyTo && hasFrom && hasTo) {
-      logger.info('Studio Ninja email has reply-to field - categorizing as Wedding Enquiry', {
-        tag: 'geminiService',
-        replyTo: emailHeaders['reply-to'],
-        senderEmail: senderEmail
-      });
-      return {
-        category: 'Studio Ninja Wedding Enquiry',
-        reasoning: 'Studio Ninja email with reply-to field detected - this is a wedding enquiry that needs special handling'
-      };
-    } else {
-      logger.info('Studio Ninja email without reply-to field - categorizing as Studio Ninja System', {
-        tag: 'geminiService',
-        senderEmail: senderEmail
-      });
-      return {
-        category: 'Studio Ninja System',
-        reasoning: 'Studio Ninja system email without reply-to field - mark as read and leave in inbox'
-      };
-    }
-  }
-
   if (!config.openai || !config.openai.apiKey) {
     logger.warn('OpenAI API key not configured. Using fallback categorization.', {
       tag: 'geminiService',
@@ -140,10 +104,10 @@ export const categorizeEmail = async (emailBody, senderEmail, emailSubject = '',
       };
     }
 
-    // Default to Draft Email only for legitimate-looking emails
+    // Default to Reply Needed only for legitimate-looking emails
     return {
-      category: 'Draft Email',
-      reasoning: 'Fallback categorization: Appears to be legitimate business email, defaulting to Draft Email.'
+      category: 'Reply Needed',
+      reasoning: 'Fallback categorization: Appears to be legitimate business email, defaulting to Reply Needed.'
     };
   }
 
@@ -155,15 +119,6 @@ export const categorizeEmail = async (emailBody, senderEmail, emailSubject = '',
     };
   }
 
-  // Check whitelist first
-  if (await isWhitelistedSpamSender(senderEmail)) {
-    logger.info(`Sender ${senderEmail} is whitelisted, categorizing as Whitelisted Spam`, {tag: 'geminiService'});
-    return {
-      category: 'Whitelisted Spam',
-      reasoning: 'Sender is in the whitelist.'
-    };
-  }
-
   // Prepare prompt for OpenAI GPT-5.4-mini
 
   const prompt = `You are analyzing an email for a photographer/videographer business. The email content may contain a full conversation thread with multiple messages.
@@ -171,14 +126,14 @@ export const categorizeEmail = async (emailBody, senderEmail, emailSubject = '',
 Your task is to categorize the email into ONE of these four categories EXACTLY as written:
 
 **REQUIRED CATEGORIES (choose one exactly):**
-- "Draft Email"
+- "Reply Needed"
 - "Invoices" 
 - "Spam"
 - "Notifications"
 
 **CATEGORIZATION RULES:**
 
-**"Draft Email"** - Use for legitimate business communications:
+**"Reply Needed"** - Use for legitimate business communications that should stay in inbox for manual response:
 - Client inquiries about photography/videography services
 - Business communications requiring response
 - Personal emails from known contacts
@@ -207,8 +162,8 @@ Your task is to categorize the email into ONE of these four categories EXACTLY a
 - Non-urgent automated messages that don't require immediate action
 
 **CRITICAL:** 
-- You MUST use one of these exact category names: "Draft Email", "Invoices", "Spam", or "Notifications"
-- When unsure between "Draft Email" and "Notifications", choose "Draft Email"
+- You MUST use one of these exact category names: "Reply Needed", "Invoices", "Spam", or "Notifications"
+- When unsure between "Reply Needed" and "Notifications", choose "Reply Needed"
 - When unsure between "Spam" and "Notifications", choose "Notifications" if it's from a legitimate service
 - Do NOT create new category names
 
@@ -219,7 +174,7 @@ Body: ${emailBody}
 
 **Response format (use exactly this structure):**
 {
-  "category": "Draft Email" | "Invoices" | "Spam",
+  "category": "Reply Needed" | "Invoices" | "Spam" | "Notifications",
   "reasoning": "Brief explanation of why this category was chosen"
 }`;
 
@@ -252,7 +207,7 @@ Body: ${emailBody}
               type: 'object',
               additionalProperties: false,
               properties: {
-                category: { type: 'string', enum: ['Draft Email', 'Invoices', 'Spam', 'Notifications'] },
+                category: { type: 'string', enum: ['Reply Needed', 'Invoices', 'Spam', 'Notifications'] },
                 reasoning: { type: 'string' }
               },
               required: ['category', 'reasoning']
@@ -304,8 +259,8 @@ Body: ${emailBody}
     });
 
     // Validate category
-    const validCategories = ['Draft Email', 'Invoices', 'Spam', 'Notifications'];
-    const category = validCategories.includes(parsedResult.category) ? parsedResult.category : 'Draft Email';
+    const validCategories = ['Reply Needed', 'Invoices', 'Spam', 'Notifications'];
+    const category = validCategories.includes(parsedResult.category) ? parsedResult.category : 'Reply Needed';
 
     return {
       category: category,
@@ -324,7 +279,6 @@ Body: ${emailBody}
       emailSubject: emailSubject,
       emailBodyLength: emailBody ? emailBody.length : 0,
       emailSubjectLength: emailSubject ? emailSubject.length : 0,
-      hasGenAI: !!genAI,
       apiKeyLength: config.gemini?.apiKey ? config.gemini.apiKey.length : 0
     };
 
@@ -347,8 +301,8 @@ Body: ${emailBody}
     }
 
     return {
-      category: 'Draft Email',
-      reasoning: `Categorization error: ${error.message}, defaulting to Draft Email for safety.`
+      category: 'Reply Needed',
+      reasoning: `Categorization error: ${error.message}, defaulting to Reply Needed for safety.`
     };
   }
 };

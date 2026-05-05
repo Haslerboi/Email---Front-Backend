@@ -4,8 +4,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import { config } from './config/env.js';
 import routes from './routes/index.js';
-import { checkForNewEmails, checkWhiteLabelForUpdates, processPendingNotifications } from './services/gmail/index.js';
-import ProcessedEmailsService from './services/processedEmails.js';
+import { checkForNewEmails, processPendingNotifications } from './services/gmail/index.js';
 // import telegramPolling from './services/telegram/polling.js'; // Removed
 import logger from './utils/logger.js';
 
@@ -127,32 +126,6 @@ const initialDelay = configuredInitialDelay + initialJitter;
 
 setTimeout(checkGmail, initialDelay);
 console.log(`Gmail polling will start in approximately ${Math.round(initialDelay/1000)} seconds.`);
-
-// ✅ Whitelist checking loop (checks 'white' folder every 2 minutes)
-const WHITELIST_CHECK_INTERVAL = 2 * 60 * 1000; // 2 minutes
-let whitelistCheckCount = 0;
-
-const checkWhitelistFolder = () => {
-  whitelistCheckCount++;
-  console.log(`🔍 Checking whitelist folder... (Check #${whitelistCheckCount}, Instance ${APP_INSTANCE_ID})`);
-  
-  Promise.all([
-    checkWhiteLabelForUpdates(),
-    // Run cleanup every 10 checks (every 20 minutes)
-    whitelistCheckCount % 10 === 0 ? ProcessedEmailsService.cleanup() : Promise.resolve()
-  ])
-    .catch(error => {
-      logger.error('Error during whitelist/cleanup check:', { error: error.message, stack: error.stack });
-    })
-    .finally(() => {
-      setTimeout(checkWhitelistFolder, WHITELIST_CHECK_INTERVAL);
-    });
-};
-
-// Start whitelist checking with initial delay
-const whitelistInitialDelay = 30000; // 30 seconds
-setTimeout(checkWhitelistFolder, whitelistInitialDelay);
-console.log(`Whitelist checking will start in approximately ${Math.round(whitelistInitialDelay/1000)} seconds.`);
 
 // ✅ Notification processing loop (checks pending notifications every minute)
 const NOTIFICATION_CHECK_INTERVAL = 60 * 1000; // 1 minute

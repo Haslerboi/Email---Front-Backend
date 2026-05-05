@@ -2,7 +2,6 @@
 import { Router } from 'express';
 import { getApiStatus } from '../services/apiStatus.js';
 import { config } from '../config/env.js';
-import { getAllWhitelistedSenders, addWhitelistedSender, removeWhitelistedSender } from '../services/whitelistService.js';
 import ProcessedEmailsService from '../services/processedEmails.js';
 import PendingNotificationsService from '../services/pendingNotifications.js';
 import { categorizeEmail } from '../services/geminiService.js';
@@ -14,13 +13,10 @@ const router = Router();
 // Welcome route
 router.get('/', (req, res) => {
   res.json({
-    message: 'Welcome to the Email Assistant API - New Categorization System with Studio Ninja Support',
+    message: 'Welcome to the Email Assistant API - Simplified categorization and inbox organization',
     version: '2.1.0',
     endpoints: {
       status: '/api/status',
-      whitelist: '/api/whitelist',
-      'whitelist-add': '/api/whitelist/add',
-      'whitelist-remove': '/api/whitelist/remove',
       'processed-emails': '/api/processed-emails',
       'processed-emails-clear': '/api/processed-emails/clear (POST - resets all processed emails)',
       'pending-notifications': '/api/pending-notifications',
@@ -29,13 +25,10 @@ router.get('/', (req, res) => {
       'test-categorization': '/api/test-categorization (GET - run categorization prompt via gpt-5.4-mini and return raw)'
     },
     categories: [
-      'Draft Email - Legitimate business emails left unread in inbox for manual response',
-      'Studio Ninja Wedding Enquiry - Special handling for wedding enquiries with reply-to field (left unread for manual response)',
-      'Studio Ninja System - System emails from Studio Ninja without reply-to (mark as read, no processing)',
+      'Reply Needed - Legitimate business emails left unread in inbox for manual response',
       'Invoices - Automatic filing to Invoices folder',
       'Spam - Automatic move to Email Prison',
-      'Notifications - Stay in inbox for 5 minutes, then move to Notification folder',
-      'Whitelisted Spam - Mark as read, keep in inbox'
+      'Notifications - Stay in inbox for 5 minutes, then move to Notification folder'
     ]
   });
 });
@@ -46,77 +39,6 @@ router.get('/status', async (req, res) => {
     res.json(status);
   } catch (error) {
     res.status(500).json({ status: 'error', message: error.message });
-  }
-});
-
-// GET /api/whitelist - Get all whitelisted senders
-router.get('/whitelist', async (req, res) => {
-  try {
-    const whitelistedSenders = getAllWhitelistedSenders();
-    res.json({
-      status: 'success',
-      count: whitelistedSenders.length,
-      senders: whitelistedSenders
-    });
-  } catch (error) {
-    logger.error('Error fetching whitelisted senders:', { error: error.message, stack: error.stack });
-    res.status(500).json({ status: 'error', message: 'Failed to retrieve whitelisted senders' });
-  }
-});
-
-// POST /api/whitelist/add - Add a sender to whitelist
-router.post('/whitelist/add', async (req, res) => {
-  const { senderEmail } = req.body;
-  
-  if (!senderEmail) {
-    return res.status(400).json({ status: 'error', message: 'senderEmail is required' });
-  }
-  
-  try {
-    const added = await addWhitelistedSender(senderEmail);
-    if (added) {
-      logger.info(`Manually added sender to whitelist: ${senderEmail}`);
-      res.json({
-        status: 'success',
-        message: `Successfully added ${senderEmail} to whitelist`
-      });
-    } else {
-      res.json({
-        status: 'info',
-        message: `${senderEmail} was already in the whitelist`
-      });
-    }
-  } catch (error) {
-    logger.error('Error adding sender to whitelist:', { error: error.message, senderEmail });
-    res.status(500).json({ status: 'error', message: 'Failed to add sender to whitelist' });
-  }
-});
-
-// DELETE /api/whitelist/remove - Remove a sender from whitelist
-router.delete('/whitelist/remove', async (req, res) => {
-  const { senderEmail } = req.body;
-  
-  if (!senderEmail) {
-    return res.status(400).json({ status: 'error', message: 'senderEmail is required' });
-  }
-  
-  try {
-    const removed = await removeWhitelistedSender(senderEmail);
-    if (removed) {
-      logger.info(`Manually removed sender from whitelist: ${senderEmail}`);
-      res.json({
-        status: 'success',
-        message: `Successfully removed ${senderEmail} from whitelist`
-      });
-    } else {
-      res.status(404).json({
-        status: 'error',
-        message: `${senderEmail} was not found in the whitelist`
-      });
-    }
-  } catch (error) {
-    logger.error('Error removing sender from whitelist:', { error: error.message, senderEmail });
-    res.status(500).json({ status: 'error', message: 'Failed to remove sender from whitelist' });
   }
 });
 
@@ -248,7 +170,7 @@ router.get('/test-categorization', async (req, res) => {
     const emailSubject = req.query.subject || 'Deployment crashed for Assistant-Backend in perceptive-cat!';
     const emailBody = req.query.body || 'Your Railway service crashed. Please check logs.';
 
-    const prompt = `You are analyzing an email for a photographer/videographer business.\n\nYour task is to categorize the email into ONE of these four categories EXACTLY as written:\n- "Draft Email"\n- "Invoices"\n- "Spam"\n- "Notifications"\n\nEmail to categorize:\nSender: ${senderEmail}\nSubject: ${emailSubject}\nBody: ${emailBody}\n\nReturn ONLY a JSON object with fields: category, reasoning.`;
+    const prompt = `You are analyzing an email for a photographer/videographer business.\n\nYour task is to categorize the email into ONE of these four categories EXACTLY as written:\n- "Reply Needed"\n- "Invoices"\n- "Spam"\n- "Notifications"\n\nEmail to categorize:\nSender: ${senderEmail}\nSubject: ${emailSubject}\nBody: ${emailBody}\n\nReturn ONLY a JSON object with fields: category, reasoning.`;
 
     const resp = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -270,7 +192,7 @@ router.get('/test-categorization', async (req, res) => {
               type: 'object',
               additionalProperties: false,
               properties: {
-                category: { type: 'string', enum: ['Draft Email', 'Invoices', 'Spam', 'Notifications'] },
+                category: { type: 'string', enum: ['Reply Needed', 'Invoices', 'Spam', 'Notifications'] },
                 reasoning: { type: 'string' }
               },
               required: ['category', 'reasoning']
