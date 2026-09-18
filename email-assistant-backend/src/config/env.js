@@ -87,7 +87,6 @@ export const validateEnv = () => {
     'GMAIL_CLIENT_SECRET',
     'GMAIL_REFRESH_TOKEN',
     'OPENAI_API_KEY',
-    'GEMINI_API_KEY',
   ];
   
   let requiredEnvVars = [...baseRequiredEnvVars];

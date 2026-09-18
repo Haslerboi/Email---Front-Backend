@@ -1,13 +1,42 @@
 # Email Assistant Backend
 
-A backend service that checks for new emails, analyzes them using AI, and sends notifications to Telegram.
+A backend service that polls Gmail, classifies each new inbox email, and files it.
 
-## Features
+## How classification works
 
-- Gmail API integration for email monitoring
-- OpenAI integration for email analysis and reply generation
-- Telegram integration for notifications and user interaction
-- Support for both webhook and polling for Telegram integration
+Every unread inbox email (Promotions and Social tabs excluded) goes through
+`src/services/classifier/`:
+
+1. **Rules first** (`rules.js`, `senderRules.js`): bounces, auto-replies, a sender table,
+   attachment-only messages from people, and a "known contact / Guy already replied in this
+   thread" check that guarantees the email stays in the inbox. Edit `senderRules.js` to teach
+   it a sender without touching the model.
+2. **Model second** (`prompt.js`, OpenAI Responses API, default `gpt-5.6-luna` with reasoning
+   off): picks one of seven labels for anything the rules did not decide.
+
+Labels (`labels.js`): Reply Needed, Action Required, Reference, Client FYI stay in the inbox
+unread (the last three also get a Gmail label). Invoices and Email Prison are filed and marked
+read. Notification is held in the inbox for 5 minutes (30 for login codes) and then filed.
+
+Design and survey findings: `docs/classification-design.md`.
+
+### Eval
+
+`eval/` holds a hand-labelled set of hard emails (gitignored) and a scorer:
+
+```
+npm run eval:label                       # labelling UI at http://localhost:4321
+npm run eval:run -- --provider production   # rules + model, what Railway runs
+npm run eval:run -- --provider openai --model gpt-5.6-luna --effort low
+```
+
+### Debug endpoint
+
+`GET /api/classify?from=&subject=&body=` or `POST /api/classify` with JSON runs the production
+classifier on a supplied email and returns the label, reasoning and which rule or model decided.
+
+Environment overrides: `CATEGORIZATION_MODEL`, `CATEGORIZATION_REASONING_EFFORT`,
+`GMAIL_USER_ADDRESS`.
 
 ## Environment Configuration
 
@@ -23,6 +52,9 @@ TELEGRAM_WEBHOOK_SECRET=
 
 # OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key
+# Optional: classifier model / reasoning (defaults: gpt-5.6-luna / none)
+# CATEGORIZATION_MODEL=gpt-5.6-luna
+# CATEGORIZATION_REASONING_EFFORT=none
 
 # Gmail Configuration
 GMAIL_CLIENT_ID=your_gmail_client_id

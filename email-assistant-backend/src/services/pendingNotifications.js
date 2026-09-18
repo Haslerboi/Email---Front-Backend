@@ -92,10 +92,11 @@ const PendingNotificationsService = {
    * @param {Object} emailData - The email data object
    * @returns {Promise<void>}
    */
-  addPendingNotification: async (emailData) => {
+  addPendingNotification: async (emailData, holdMs = 5 * 60 * 1000) => {
     const emailId = emailData.id;
     const notificationData = {
-      emailData: emailData,
+      emailData: { id: emailData.id, threadId: emailData.threadId, subject: emailData.subject, sender: emailData.sender },
+      holdMs,
       timestamp: new Date(),
       subject: emailData.subject,
       sender: emailData.sender
@@ -107,7 +108,7 @@ const PendingNotificationsService = {
     logger.info(`Added pending notification: "${emailData.subject}" from ${emailData.sender}`, { 
       tag: 'pendingNotifications',
       emailId: emailId,
-      willMoveAt: new Date(Date.now() + 5 * 60 * 1000).toISOString()
+      willMoveAt: new Date(Date.now() + holdMs).toISOString()
     });
   },
 
@@ -116,11 +117,11 @@ const PendingNotificationsService = {
    * @returns {Array} - Array of notification data ready to be moved
    */
   getReadyNotifications: () => {
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
     const readyNotifications = [];
     
     for (const [emailId, data] of pendingNotifications.entries()) {
-      if (data.timestamp <= fiveMinutesAgo) {
+      const holdMs = data.holdMs || 5 * 60 * 1000;
+      if (data.timestamp.getTime() + holdMs <= Date.now()) {
         readyNotifications.push({
           emailId: emailId,
           ...data

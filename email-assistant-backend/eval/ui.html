@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Email eval labelling</title>
+<style>
+  :root { --bg:#fafafa; --fg:#1a1a1a; --muted:#666; --card:#fff; --line:#e3e3e3; --accent:#2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121212; --fg:#eee; --muted:#999; --card:#1c1c1c; --line:#2c2c2c; --accent:#60a5fa; } }
+  body { margin:0; font:15px/1.5 -apple-system,system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+  header { display:flex; justify-content:space-between; align-items:center; padding:12px 20px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); }
+  main { display:grid; grid-template-columns: 1fr 340px; gap:20px; padding:20px; max-width:1300px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; }
+  .meta { color:var(--muted); font-size:13px; margin-bottom:10px; }
+  .meta b { color:var(--fg); }
+  .subject { font-size:18px; font-weight:600; margin:4px 0 12px; }
+  pre { white-space:pre-wrap; word-break:break-word; font:14px/1.5 ui-monospace,Menlo,monospace; max-height:60vh; overflow:auto; margin:0; }
+  .why { display:inline-block; background:#fef3c7; color:#92400e; border-radius:6px; padding:2px 8px; font-size:12px; margin-left:8px; }
+  .btns { display:flex; flex-direction:column; gap:8px; }
+  button.lbl { text-align:left; padding:10px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:8px; cursor:pointer; font-size:14px; }
+  button.lbl:hover { border-color:var(--accent); }
+  button.lbl.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.lbl kbd { display:inline-block; width:20px; text-align:center; border:1px solid var(--line); border-radius:4px; font-size:12px; margin-right:8px; opacity:.8; }
+  button.lbl small { display:block; opacity:.75; font-size:12px; margin-left:28px; }
+  .nav { display:flex; gap:8px; margin-top:14px; }
+  .nav button, textarea { font:inherit; }
+  .nav button { flex:1; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  textarea { width:100%; box-sizing:border-box; margin-top:10px; border:1px solid var(--line); border-radius:8px; padding:8px; background:var(--card); color:var(--fg); }
+  .progress { color:var(--muted); font-size:13px; }
+  .flags span { display:inline-block; margin-right:10px; font-size:12px; color:var(--muted); }
+  @media (max-width: 900px) { main { grid-template-columns:1fr; } }
+</style></head><body>
+<header>
+  <div><strong>Email eval labelling</strong> <span class="progress" id="progress"></span></div>
+  <div class="progress">Keys: <kbd>1</kbd>–<kbd>7</kbd> label · <kbd>←</kbd>/<kbd>→</kbd> prev/next · <kbd>u</kbd> unlabelled next · <kbd>x</kbd> clear</div>
+</header>
+<main>
+  <section class="card" id="email"></section>
+  <aside>
+    <div class="card">
+      <div class="btns" id="btns"></div>
+      <textarea id="note" rows="2" placeholder="Optional note (why this was tricky)"></textarea>
+      <div class="nav">
+        <button onclick="go(-1)">← Prev</button>
+        <button onclick="nextUnlabelled()">Next unlabelled</button>
+        <button onclick="go(1)">Next →</button>
+      </div>
+    </div>
+  </aside>
+</main>
+<script>
+let LABELS = [], ITEMS = [], i = 0;
+const esc = s => (s ?? '').toString().replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+async function init() {
+  LABELS = await (await fetch('/api/labels')).json();
+  ITEMS = await (await fetch('/api/emails')).json();
+  try { const saved = parseInt(localStorage.getItem('evalIdx')); if (!isNaN(saved) && saved < ITEMS.length) i = saved; } catch {}
+  const first = ITEMS.findIndex(x => !x.label); if (first >= 0 && !ITEMS[i] ) i = first;
+  render();
+}
+function render() {
+  const it = ITEMS[i]; if (!it) return;
+  try { localStorage.setItem('evalIdx', i); } catch {}
+  const done = ITEMS.filter(x => x.label).length;
+  document.getElementById('progress').textContent = `${i+1} / ${ITEMS.length} · ${done} labelled`;
+  document.getElementById('email').innerHTML = `
+    <div class="meta"><b>From:</b> ${esc(it.from)} ${it.replyTo ? `· <b>Reply-To:</b> ${esc(it.replyTo)}` : ''}<br>
+    <b>To:</b> ${esc(it.to)} · <b>Date:</b> ${esc(it.date)}</div>
+    <div class="subject">${esc(it.subject) || '(no subject)'} ${it.whyHard ? `<span class="why">${esc(it.whyHard)}</span>` : ''}</div>
+    <div class="flags">
+      ${it.attachments?.length ? `<span>📎 ${esc(it.attachments.join(', '))}</span>` : ''}
+      ${it.guyRepliedEarlierInThread ? '<span>↩︎ you replied earlier in this thread</span>' : ''}
+      ${it.currentLabels?.length ? `<span>labels: ${esc(it.currentLabels.join(', '))}</span>` : ''}
+    </div>
+    <pre>${esc(it.body) || '(empty body)'}</pre>`;
+  document.getElementById('btns').innerHTML = LABELS.map((l, n) =>
+    `<button class="lbl ${it.label === l.key ? 'active' : ''}" onclick="setLabel('${l.key}')"><kbd>${(n+1)%10}</kbd>${esc(l.name)}<small>${esc(l.hint)}</small></button>`).join('');
+  document.getElementById('note').value = it.note || '';
+}
+async function setLabel(key) {
+  const it = ITEMS[i]; it.label = key; it.note = document.getElementById('note').value;
+  await fetch('/api/label', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: it.id, label: key, note: it.note }) });
+  nextUnlabelled(true);
+}
+async function clearLabel() {
+  const it = ITEMS[i]; it.label = null;
+  await fetch('/api/label', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: it.id, label: null }) });
+  render();
+}
+function go(d) { i = Math.min(ITEMS.length-1, Math.max(0, i + d)); render(); }
+function nextUnlabelled(fromCurrent) {
+  const start = fromCurrent ? i + 1 : 0;
+  let n = ITEMS.findIndex((x, k) => k >= start && !x.label);
+  if (n < 0) n = ITEMS.findIndex(x => !x.label);
+  if (n < 0) { i = Math.min(ITEMS.length-1, i+1); alert('All labelled 🎉'); } else i = n;
+  render();
+}
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'TEXTAREA') return;
+  if (e.key >= '1' && e.key <= '9' && LABELS[+e.key-1]) setLabel(LABELS[+e.key-1].key);
+  else if (e.key === '0' && LABELS[9]) setLabel(LABELS[9].key);
+  else if (e.key === 'ArrowLeft') go(-1);
+  else if (e.key === 'ArrowRight') go(1);
+  else if (e.key === 'u') nextUnlabelled(true);
+  else if (e.key === 'x') clearLabel();
+});
+document.getElementById('note').addEventListener('blur', async () => {
+  const it = ITEMS[i]; it.note = document.getElementById('note').value;
+  await fetch('/api/label', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: it.id, label: it.label, note: it.note }) });
+});
+init();
+</script></body></html>

@@ -1,7 +1,7 @@
 // Gmail service for interacting with Gmail API
 import { config } from '../../config/env.js';
 import { google } from 'googleapis';
-import { categorizeEmail } from '../geminiService.js';
+import { classifyEmail, INBOX_LABELS, GMAIL_LABEL } from '../classifier/index.js';
 import logger from '../../utils/logger.js';
 import ProcessedEmailsService from '../processedEmails.js';
 import PendingNotificationsService from '../pendingNotifications.js';
@@ -37,7 +37,9 @@ const getGmailClient = async () => {
  * @param {string} labelName - The name of the label to get or create
  * @returns {Promise<string>} - The label ID
  */
+const labelIdCache = new Map();
 const getOrCreateLabel = async (labelName) => {
+  if (labelIdCache.has(labelName)) return labelIdCache.get(labelName);
   try {
     const gmail = await getGmailClient();
     
@@ -47,6 +49,7 @@ const getOrCreateLabel = async (labelName) => {
     
     if (existingLabel) {
       logger.info(`Found existing label: ${labelName} (ID: ${existingLabel.id})`, { tag: 'gmailService' });
+      labelIdCache.set(labelName, existingLabel.id);
       return existingLabel.id;
     }
     
@@ -61,6 +64,7 @@ const getOrCreateLabel = async (labelName) => {
     });
     
     logger.info(`Created new label: ${labelName} (ID: ${createResponse.data.id})`, { tag: 'gmailService' });
+    labelIdCache.set(labelName, createResponse.data.id);
     return createResponse.data.id;
   } catch (error) {
     logger.error(`Error getting/creating label ${labelName}:`, { 
@@ -70,6 +74,16 @@ const getOrCreateLabel = async (labelName) => {
     });
     throw new Error(`Failed to get/create label ${labelName}: ${error.message}`);
   }
+};
+
+/**
+ * Add a label to an email without removing it from the inbox
+ */
+const addLabel = async (messageId, labelName) => {
+  const gmail = await getGmailClient();
+  const labelId = await getOrCreateLabel(labelName);
+  await gmail.users.messages.modify({ userId: 'me', id: messageId, requestBody: { addLabelIds: [labelId] } });
+  logger.info(`Added label ${labelName} to ${messageId}`, { tag: 'gmailService' });
 };
 
 /**
@@ -100,7 +114,46 @@ const moveToLabel = async (messageId, labelName) => {
   }
 };
 
-const fetchUnreadEmails = async (maxResults = 5, newerThanMinutes = 5) => {
+const decode = (data) => Buffer.from(String(data).replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8');
+const htmlToText = (html) => String(html)
+  .replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<script[\s\S]*?<\/script>/gi, ' ')
+  .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|li|h\d)>/gi, '\n')
+  .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"')
+  .replace(/[ \t]+/g, ' ').replace(/\n\s*\n\s*\n+/g, '\n\n').trim();
+
+// Walk the MIME tree: prefer text/plain, fall back to text/html, collect attachment filenames.
+const extractBodyAndAttachments = (payload, snippet = '') => {
+  let plain = '', html = ''; const attachments = [];
+  const walk = (part) => {
+    if (!part) return;
+    if (part.filename) attachments.push(part.filename);
+    const mime = part.mimeType || '';
+    if (part.body?.data) {
+      if (mime === 'text/plain' && !plain) plain = decode(part.body.data);
+      else if (mime === 'text/html' && !html) html = decode(part.body.data);
+    }
+    (part.parts || []).forEach(walk);
+  };
+  walk(payload);
+  const body = (plain || (html ? htmlToText(html) : '') || snippet || '').slice(0, 6000);
+  return { body, attachments };
+};
+
+const MY_ADDRESS = (process.env.GMAIL_USER_ADDRESS || 'guy@thecedar.co').toLowerCase();
+// Did Guy send a message in this thread before this one? (one metadata call per email)
+const didGuyReplyEarlier = async (gmail, threadId, messageId, internalDate) => {
+  try {
+    const t = await gmail.users.threads.get({ userId: 'me', id: threadId, format: 'metadata', metadataHeaders: ['From'] });
+    return (t.data.messages || []).some(m => m.id !== messageId
+      && parseInt(m.internalDate) < internalDate
+      && ((m.labelIds || []).includes('SENT') || (m.payload?.headers || []).some(h => h.name === 'From' && h.value.toLowerCase().includes(MY_ADDRESS))));
+  } catch (e) {
+    logger.warn(`Thread lookup failed for ${threadId}: ${e.message}`, { tag: 'gmailService' });
+    return false;
+  }
+};
+
+const fetchUnreadEmails = async (maxResults = 25, newerThanMinutes = 30) => {
   try {
     const gmail = await getGmailClient();
     
@@ -146,15 +199,8 @@ const fetchUnreadEmails = async (maxResults = 5, newerThanMinutes = 5) => {
           allHeaders[header.name.toLowerCase()] = header.value;
         });
 
-        let decodedBody = email.snippet;
-        if (email.payload.body?.data) {
-          decodedBody = Buffer.from(email.payload.body.data, 'base64').toString('utf-8');
-        } else if (email.payload.parts) {
-          const textPart = email.payload.parts.find(part => part.mimeType === 'text/plain' || part.mimeType === 'text/html');
-          if (textPart?.body?.data) {
-            decodedBody = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
-          }
-        }
+        const { body: decodedBody, attachments } = extractBodyAndAttachments(email.payload, email.snippet);
+        const guyRepliedEarlierInThread = await didGuyReplyEarlier(gmail, email.threadId, email.id, parseInt(email.internalDate));
 
         return {
           id: email.id,
@@ -166,6 +212,8 @@ const fetchUnreadEmails = async (maxResults = 5, newerThanMinutes = 5) => {
           date: getHeader('date'),
           snippet: email.snippet,
           body: decodedBody,
+          attachments,
+          guyRepliedEarlierInThread,
           headers: allHeaders, // Include all headers for categorization
           labels: email.labelIds || [],
           isRead: !(email.labelIds || []).includes('UNREAD'),
@@ -305,8 +353,8 @@ export const checkForNewEmails = async () => {
   logger.info('checkForNewEmails: Starting process with new categorization system.', {tag: 'gmailService'});
   
   try {
-    // Fetch emails newer than 5 minutes to avoid reprocessing old emails
-    const emails = await fetchUnreadEmails(3, 5); // Reduced from 5 to 3 for efficiency
+    // Fetch unread inbox emails from the last 30 minutes; already-processed ones are filtered below.
+    const emails = await fetchUnreadEmails(25, 30);
     if (!emails || !emails.length) {
       logger.info('checkForNewEmails: No new unread emails to process.', {tag: 'gmailService'});
       return;
@@ -359,77 +407,36 @@ export const checkForNewEmails = async () => {
         sender: email.sender || '[Unknown Sender]',
         recipient: email.recipient || '',
         headers: email.headers || {},
+        attachments: email.attachments || [],
+        guyRepliedEarlierInThread: !!email.guyRepliedEarlierInThread,
+        replyTo: email.replyTo || '',
         date: email.date || new Date().toISOString()
       };
       
-      logger.info('Calling OpenAI (gpt-5.4-mini) for email categorization...', {tag: 'gmailService', emailId: sanitizedEmail.id});
-      let geminiResult;
+      const result = await classifyEmail({
+        from: sanitizedEmail.sender, replyTo: sanitizedEmail.replyTo, to: sanitizedEmail.recipient, date: sanitizedEmail.date,
+        subject: sanitizedEmail.subject, body: sanitizedEmail.body, attachments: sanitizedEmail.attachments,
+        guyRepliedEarlierInThread: sanitizedEmail.guyRepliedEarlierInThread, headers: sanitizedEmail.headers
+      });
+      logger.info(`Classified "${sanitizedEmail.subject}" from ${sanitizedEmail.sender} -> ${result.label} (${result.source})`, {
+        tag: 'gmailService', emailId: sanitizedEmail.id, label: result.label, source: result.source, reasoning: result.reasoning
+      });
+
+      // Route by label
+      const gmailLabel = GMAIL_LABEL[result.label];
       try {
-        geminiResult = await categorizeEmail(sanitizedEmail.body, sanitizedEmail.sender, sanitizedEmail.subject, sanitizedEmail.headers);
-        logger.info('Categorization result (OpenAI):', {tag: 'gmailService', emailId: sanitizedEmail.id, category: geminiResult.category});
-      } catch (categorizationError) {
-        logger.error('Failed to categorize email, using fallback:', {
-          tag: 'gmailService', 
-          emailId: sanitizedEmail.id,
-          error: categorizationError.message,
-          stack: categorizationError.stack
-        });
-        // Fallback to Reply Needed for safety
-        geminiResult = {
-          category: 'Reply Needed',
-          reasoning: 'Categorization failed, treating as Reply Needed for safety'
-        };
-      }
-
-      // Process based on category
-      switch (geminiResult.category) {
-        case 'Reply Needed':
-          logger.info(
-            `Processing Reply Needed: "${sanitizedEmail.subject}" - leaving unread in inbox`,
-            { tag: 'gmailService', emailId: sanitizedEmail.id }
-          );
-          break;
-
-        case 'Invoices':
-          logger.info(`Moving invoice email to Invoices folder: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
-          try {
-            await moveToLabel(sanitizedEmail.id, 'Invoices');
-            await markAsRead(sanitizedEmail.id);
-            logger.info(`Successfully moved invoice email to Invoices folder`, {tag: 'gmailService'});
-          } catch (invoiceError) {
-            logger.error('Error moving invoice email:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: invoiceError.message});
-          }
-          break;
-
-        case 'Spam':
-          logger.info(`Moving spam email to Email Prison: "${sanitizedEmail.subject}"`, {tag: 'gmailService'});
-          try {
-            await moveToLabel(sanitizedEmail.id, 'Email Prison');
-            await markAsRead(sanitizedEmail.id);
-            logger.info(`Successfully moved spam email to Email Prison`, {tag: 'gmailService'});
-          } catch (spamError) {
-            logger.error('Error moving spam email:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: spamError.message});
-          }
-          break;
-
-        case 'Notifications':
-          logger.info(`Adding notification to pending list: "${sanitizedEmail.subject}" from ${sanitizedEmail.sender}`, {tag: 'gmailService'});
-          try {
-            // Add to pending notifications (will be moved after 5 minutes)
-            await PendingNotificationsService.addPendingNotification(sanitizedEmail);
-            // Don't mark as read yet - keep in inbox for 5 minutes
-            logger.info(`Successfully added notification to pending list`, {tag: 'gmailService'});
-          } catch (notificationError) {
-            logger.error('Error adding notification to pending list:', {tag: 'gmailService', emailId: sanitizedEmail.id, error: notificationError.message});
-          }
-          break;
-
-        default:
-          logger.warn(
-            `Unknown category "${geminiResult.category}". Leaving unread in inbox for manual review.`,
-            { tag: 'gmailService', emailId: sanitizedEmail.id }
-          );
-          break;
+        if (INBOX_LABELS.includes(result.label)) {
+          // Stays in inbox, unread. Optionally tagged.
+          if (gmailLabel) await addLabel(sanitizedEmail.id, gmailLabel);
+        } else if (result.label === 'notification') {
+          // Hold in inbox briefly (login codes longer), then file.
+          await PendingNotificationsService.addPendingNotification(sanitizedEmail, result.hold ? result.hold * 60 * 1000 : undefined);
+        } else {
+          await moveToLabel(sanitizedEmail.id, gmailLabel);
+          await markAsRead(sanitizedEmail.id);
+        }
+      } catch (routeError) {
+        logger.error(`Error routing email to ${result.label}:`, { tag: 'gmailService', emailId: sanitizedEmail.id, error: routeError.message });
       }
     }
   } catch (error) {
@@ -446,5 +453,6 @@ export {
   fetchUnreadEmails,
   markAsRead,
   getOrCreateLabel,
+  addLabel,
   moveToLabel
 };

@@ -4,9 +4,8 @@ import { getApiStatus } from '../services/apiStatus.js';
 import { config } from '../config/env.js';
 import ProcessedEmailsService from '../services/processedEmails.js';
 import PendingNotificationsService from '../services/pendingNotifications.js';
-import { categorizeEmail } from '../services/geminiService.js';
+import { classifyEmail, classifyWithModel, CLASSIFIER_MODEL, CLASSIFIER_REASONING_EFFORT, LABELS } from '../services/classifier/index.js';
 import logger from '../utils/logger.js';
-import fetch from 'node-fetch';
 
 const router = Router();
 
@@ -14,22 +13,17 @@ const router = Router();
 router.get('/', (req, res) => {
   res.json({
     message: 'Welcome to the Email Assistant API - Simplified categorization and inbox organization',
-    version: '2.1.0',
+    version: '3.0.0',
     endpoints: {
       status: '/api/status',
       'processed-emails': '/api/processed-emails',
       'processed-emails-clear': '/api/processed-emails/clear (POST - resets all processed emails)',
       'pending-notifications': '/api/pending-notifications',
-      'test-gemini': '/api/test-gemini (POST - test Gemini categorization)',
-      'test-gpt5-mini': '/api/test-gpt5-mini (GET - simple OpenAI Responses API check)',
-      'test-categorization': '/api/test-categorization (GET - run categorization prompt via gpt-5.4-mini and return raw)'
+      classify: '/api/classify (GET with ?from=&subject=&body= or POST JSON - run the production classifier)'
     },
-    categories: [
-      'Reply Needed - Legitimate business emails left unread in inbox for manual response',
-      'Invoices - Automatic filing to Invoices folder',
-      'Spam - Automatic move to Email Prison',
-      'Notifications - Stay in inbox for 5 minutes, then move to Notification folder'
-    ]
+    model: CLASSIFIER_MODEL,
+    reasoningEffort: CLASSIFIER_REASONING_EFFORT,
+    labels: LABELS.map(l => `${l.name} (${l.key}) - ${l.hint}`)
   });
 });
 
@@ -91,44 +85,33 @@ router.get('/pending-notifications', async (req, res) => {
   }
 });
 
-// POST /api/test-gemini - Test Gemini categorization
-router.post('/test-gemini', async (req, res) => {
+// POST /api/classify - run the production classifier (rules + model) on a supplied email
+// Body: { from, subject, body, to?, replyTo?, attachments?, guyRepliedEarlierInThread?, headers? }
+// GET  /api/classify?from=&subject=&body=  - same, for quick curl checks
+const runClassify = async (req, res) => {
   try {
-    const { emailBody, senderEmail, emailSubject } = req.body;
-    
-    // Use default test data if not provided
-    const testEmailBody = emailBody || "Hello, I'm interested in your photography services for my wedding in July. Could you please send me your pricing and availability? Thank you!";
-    const testSenderEmail = senderEmail || "bride@example.com";
-    const testEmailSubject = emailSubject || "Wedding Photography Inquiry";
-    
-    logger.info(`Testing Gemini categorization for: ${testSenderEmail} - "${testEmailSubject}"`, { tag: 'testGemini' });
-    
-    const result = await categorizeEmail(testEmailBody, testSenderEmail, testEmailSubject);
-    
-          res.json({
-        status: 'success',
-        testData: {
-          emailBody: testEmailBody,
-          senderEmail: testSenderEmail,
-          emailSubject: testEmailSubject
-        },
-      result: result,
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    logger.error('Error in Gemini test endpoint:', { 
-      error: error.message, 
-      stack: error.stack,
-      tag: 'testGemini'
-    });
-    res.status(500).json({ 
-      status: 'error', 
-      message: 'Failed to test Gemini categorization',
-      error: error.message
-    });
+    const src = req.method === 'GET' ? req.query : (req.body || {});
+    const email = {
+      from: src.from || 'Railway <hello@notify.railway.app>',
+      to: src.to || 'guy@thecedar.co',
+      replyTo: src.replyTo || '',
+      date: src.date || new Date().toISOString(),
+      subject: src.subject ?? 'Deployment crashed for Assistant-Backend',
+      body: src.body ?? 'Your Railway service crashed. Please check logs.',
+      attachments: Array.isArray(src.attachments) ? src.attachments : (typeof src.attachments === 'string' && src.attachments ? src.attachments.split(',') : []),
+      guyRepliedEarlierInThread: src.guyRepliedEarlierInThread === true || src.guyRepliedEarlierInThread === 'true',
+      headers: src.headers || {}
+    };
+    const modelOnly = src.modelOnly === true || src.modelOnly === 'true';
+    const result = modelOnly ? await classifyWithModel(email) : await classifyEmail(email);
+    res.json({ ok: true, model: CLASSIFIER_MODEL, effort: CLASSIFIER_REASONING_EFFORT, input: email, result });
+  } catch (e) {
+    logger.error('Error in /api/classify', { error: e.message, tag: 'classify' });
+    res.status(500).json({ ok: false, error: e.message });
   }
-});
+};
+router.get('/classify', runClassify);
+router.post('/classify', runClassify);
 
 export default router; 
 
@@ -145,10 +128,10 @@ router.get('/test-gpt5-mini', async (req, res) => {
         Authorization: `Bearer ${config.openai.apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-5.4-mini',
+        model: CATEGORIZATION_MODEL,
         instructions: 'Return exactly the string OK. Do not include any reasoning.',
         input: 'Say OK',
-        reasoning: { effort: 'low' },
+        reasoning: { effort: CATEGORIZATION_REASONING_EFFORT },
         max_output_tokens: 512
       }),
     });
@@ -179,10 +162,10 @@ router.get('/test-categorization', async (req, res) => {
         Authorization: `Bearer ${config.openai.apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-5.4-mini',
+        model: CATEGORIZATION_MODEL,
         instructions: 'You are a strict JSON generator. Return ONLY a JSON object matching the requested schema. No prose, no code fences.',
         input: `${prompt}`,
-        reasoning: { effort: 'low' },
+        reasoning: { effort: CATEGORIZATION_REASONING_EFFORT },
         max_output_tokens: 800,
         text: {
           format: {

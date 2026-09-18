@@ -32,3 +32,7 @@ update-openai-key.js
 check-instances.js
 setup-webhook.js other_env.txt
 telegram_env.txt
+
+# Eval dataset (contains real email content)
+eval/data/
+eval/results/

@@ -11,7 +11,9 @@
     "check-env": "node check-railway-env.js",
     "setup-railway": "node setup-railway-env.js",
     "test-gemini": "node test-gemini.js",
-    "railway-deploy": "npm run check-env && npm start"
+    "railway-deploy": "npm run check-env && npm start",
+    "eval:label": "node eval/label-server.js",
+    "eval:run": "node eval/run.js"
   },
   "keywords": [
     "gmail",
