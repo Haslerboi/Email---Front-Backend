@@ -85,7 +85,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   logger.info(`Starting server instance ${APP_INSTANCE_ID}`, { instanceId: APP_INSTANCE_ID });
   console.log(`Server running on port ${PORT} in ${config.NODE_ENV} mode`);
   console.log(`Instance ID: ${APP_INSTANCE_ID}`);
@@ -150,3 +150,11 @@ setTimeout(checkPendingNotifications, notificationInitialDelay);
 console.log(`Notification processing will start in approximately ${Math.round(notificationInitialDelay/1000)} seconds.`);
 
 export default app;
+// Exit cleanly on SIGTERM (Railway sends it on redeploy) so npm does not report a crash.
+const shutdown = (signal) => {
+  console.log(`Received ${signal}, shutting down gracefully.`);
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 5000).unref();
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
