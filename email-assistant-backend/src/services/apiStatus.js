@@ -48,7 +48,7 @@ export async function getApiStatus() {
   try {
     const config = (await import('../config/env.js')).config;
     if (config.gemini && config.gemini.apiKey) {
-      details.geminiConfig = { available: true, status: 'API key configured' };
+      details.geminiConfig = { available: true, status: 'API key configured (unused)' };
     } else {
       throw new Error('Gemini API key not configured');
     }
@@ -83,9 +83,9 @@ export async function getApiStatus() {
 
   return {
     status: allHealthy ? 'connected' : 'degraded',
-    message: allHealthy ? 'API is healthy and configured - New Categorization System v2.0' : 'One or more API subsystems have issues or are not configured',
-    version: '2.0.0',
-    categories: ['Reply Needed', 'Invoices', 'Spam', 'Notifications'],
+    message: allHealthy ? 'API is healthy and configured - rules + model classifier v3' : 'One or more API subsystems have issues or are not configured',
+    version: '3.0.0',
+    categories: ['Reply Needed', 'Action Required', 'Reference', 'Client FYI', 'Invoices', 'Notification', 'Email Prison'],
     details
   };
 } 
