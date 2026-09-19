@@ -1,6 +1,7 @@
 // Score a classifier against the hand-labelled eval set.
 // Usage:
 //   node eval/run.js --provider production                      (rules + model, what Railway runs)
+//   node eval/run.js --provider production --backend jev --minconf 0.6   (rules + Jev, Luna below confidence)
 //   node eval/run.js --provider openai --model gpt-5.6-luna --effort none   (model only)
 //   node eval/run.js --provider openai --model gpt-5.6-luna --effort low
 //   node eval/run.js --provider legacy --collapse4          (production 4-way prompt, fair comparison)
@@ -30,7 +31,7 @@ const COLLAPSE = {
 const makeProvider = async () => {
   const p = args.provider || 'openai';
   if (p === 'openai') { const { makeOpenAI } = await import('./providers/openai.js'); return makeOpenAI({ model: args.model, effort: args.effort }); }
-  if (p === 'production') { const { makeProduction } = await import('./providers/production.js'); return makeProduction({ model: args.model, effort: args.effort }); }
+  if (p === 'production') { const { makeProduction } = await import('./providers/production.js'); return makeProduction({ model: args.model, effort: args.effort, backend: args.backend, minconf: args.minconf }); }
   if (p === 'legacy') { const { makeLegacy } = await import('./providers/legacy.js'); return makeLegacy({ model: args.model, effort: args.effort }); }
   if (p === 'jev')    { const { makeJev } = await import('./providers/jev.js'); return makeJev({ model: args.model }); }
   throw new Error(`Unknown provider ${p}`);

@@ -38,6 +38,13 @@ classifier on a supplied email and returns the label, reasoning and which rule o
 Environment overrides: `CATEGORIZATION_MODEL`, `CATEGORIZATION_REASONING_EFFORT`,
 `GMAIL_USER_ADDRESS`.
 
+### Optional: TypeSafe Jev as the model
+
+Set `CLASSIFIER_PROVIDER=jev` and `TYPESAFE_API_KEY=...` to let Jev (a fast, cheap
+decision model) answer emails the rules leave open. Below `JEV_MIN_CONFIDENCE` (default 0.6)
+the email is escalated to Luna. On the eval set Jev scores within two emails of Luna and
+runs about four times faster; Luna stays the default.
+
 ## Environment Configuration
 
 Create a `.env` file with the following variables:

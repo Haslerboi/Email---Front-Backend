@@ -169,7 +169,12 @@ Done (Sept 2026):
 4. Poll window widened to 25 messages / 30 minutes. State lives on the Railway volume
    mounted at /app/data.
 
+5. Jev behind `CLASSIFIER_PROVIDER=jev` with confidence escalation to Luna. Eval (rules +
+   model, destination accuracy / inbox misfiled): Luna 95.3% / 1; Jev>=0.6 93.4% / 1;
+   Jev>=0.8 93.4% / 1. Jev's only extra misses are two personalised cold pitches it keeps in
+   the inbox. Luna remains default; Jev is one env var away and is the right tool for the
+   high-volume archive tagging in step 7.
+
 Next:
-5. Sender memory: learn from Guy moving a message between labels.
-6. Jev behind a provider switch, Luna fallback; compare on the eval set.
+6. Sender memory: learn from Guy moving a message between labels.
 7. Sent-archive tagger and the retrieval step in front of drafting.

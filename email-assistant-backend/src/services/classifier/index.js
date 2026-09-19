@@ -7,15 +7,19 @@ import { applyRules, hasListUnsubscribe } from './rules.js';
 
 export const CLASSIFIER_MODEL = process.env.CATEGORIZATION_MODEL || 'gpt-5.6-luna';
 export const CLASSIFIER_REASONING_EFFORT = process.env.CATEGORIZATION_REASONING_EFFORT || 'none';
+// Which model decides emails the rules leave open: 'openai' (Luna) or 'jev' (TypeSafe, Luna as fallback).
+export const CLASSIFIER_PROVIDER = process.env.CLASSIFIER_PROVIDER || 'openai';
+// With provider=jev: below this confidence, ask Luna instead.
+export const JEV_MIN_CONFIDENCE = parseFloat(process.env.JEV_MIN_CONFIDENCE || '0.6');
 export { LABELS, LABEL_KEYS, INBOX_LABELS, GMAIL_LABEL };
 
 const SAFE_FALLBACK = { label: 'reply_needed', reasoning: 'Classifier unavailable, kept in inbox for safety', source: 'fallback' };
 
 /**
- * Model-only classification. Exported so the eval harness can score exactly what production runs.
+ * OpenAI (Luna) classification.
  * @param {object} email - { from, replyTo, to, date, subject, body, attachments, guyRepliedEarlierInThread, headers }
  */
-export const classifyWithModel = async (email) => {
+export const classifyWithOpenAI = async (email) => {
   if (!config.openai?.apiKey) throw new Error('OPENAI_API_KEY not configured');
   const t0 = Date.now();
   const res = await fetch('https://api.openai.com/v1/responses', {
@@ -41,6 +45,25 @@ export const classifyWithModel = async (email) => {
 };
 
 /**
+ * Model-only classification per CLASSIFIER_PROVIDER. Exported so the eval harness scores what production runs.
+ * jev: use Jev's answer when confident, otherwise escalate to Luna.
+ */
+export const classifyWithModel = async (email) => {
+  if (CLASSIFIER_PROVIDER !== 'jev') return classifyWithOpenAI(email);
+  let jev = null;
+  try {
+    const { classifyWithJev } = await import('./jev.js');
+    jev = await classifyWithJev(email);
+    if (LABEL_KEYS.includes(jev.label) && jev.confidence >= JEV_MIN_CONFIDENCE) return jev;
+  } catch (e) {
+    logger.warn(`Jev failed, falling back to OpenAI: ${e.message}`, { tag: 'classifier' });
+  }
+  const luna = await classifyWithOpenAI(email);
+  return { ...luna, source: jev ? `jev<${JEV_MIN_CONFIDENCE.toFixed(2)}→model` : 'jev_error→model',
+    reasoning: jev ? `Jev said ${jev.label} (p=${jev.confidence.toFixed(2)}); ${luna.reasoning}` : luna.reasoning };
+};
+
+/**
  * Full classification: rules, then model, with the inbox guarantee applied.
  * Never throws; falls back to reply_needed.
  */
@@ -62,4 +85,4 @@ export const classifyEmail = async (email) => {
   }
 };
 
-export default { classifyEmail, classifyWithModel, CLASSIFIER_MODEL, CLASSIFIER_REASONING_EFFORT };
+export default { classifyEmail, classifyWithModel, classifyWithOpenAI, CLASSIFIER_MODEL, CLASSIFIER_REASONING_EFFORT, CLASSIFIER_PROVIDER };
