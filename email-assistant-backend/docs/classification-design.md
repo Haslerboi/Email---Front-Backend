@@ -42,7 +42,7 @@ Seven labels. This is the set Guy actually used when hand-labelling the 106-emai
 Inbox (unread):
 1. **Reply Needed** - a person is asking Guy something by email and expects an email reply.
    Includes human messages from the accountant. "invoice" in a human message changes nothing.
-2. **Action Required** [label "Action Required"] - Guy must do something, nobody expects an
+2. **Action Required** [no Gmail label, primary inbox] - Guy must do something, nobody expects an
    email reply: "send me the bill" close-outs, bills to pay manually (rates, overdue, failed
    card, bank-transfer invoices), compliance deadlines, platform relays Guy answers on the
    platform (Builderscrack, Airbnb host).
