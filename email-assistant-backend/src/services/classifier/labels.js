@@ -12,12 +12,13 @@ export const LABELS = [
 export const LABEL_KEYS = LABELS.map(l => l.key);
 // Labels that stay in the inbox (unread); the rest are filed.
 export const INBOX_LABELS = ['reply_needed', 'action_required', 'reference', 'client_fyi'];
-// Gmail label to add for each key. null = no label (plain inbox). Filed labels remove INBOX.
+// Gmail label to add for each key. null = no label (plain primary inbox). Filed labels remove INBOX.
+// Reference and Client FYI are classification categories only; Guy wants them unlabelled in the inbox.
 export const GMAIL_LABEL = {
   reply_needed: null,
   action_required: 'Action Required',
-  reference: 'Reference',
-  client_fyi: 'Client FYI',
+  reference: null,
+  client_fyi: null,
   invoices: 'Invoices',
   notification: 'Notification',
   spam: 'Email Prison',
