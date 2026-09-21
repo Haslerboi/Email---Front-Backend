@@ -14,8 +14,8 @@ Every unread inbox email (Promotions and Social tabs excluded) goes through
 2. **Model second** (`prompt.js`, OpenAI Responses API, default `gpt-5.6-luna` with reasoning
    off): picks one of seven labels for anything the rules did not decide.
 
-Labels (`labels.js`): Reply Needed, Action Required, Reference, Client FYI stay in the inbox
-unread (the last three also get a Gmail label). Invoices and Email Prison are filed and marked
+Labels (`labels.js`): Reply Needed, Action Required, Reference, Client FYI stay in the primary
+inbox unread (only Action Required gets a Gmail label). Invoices and Email Prison are filed and marked
 read. Notification is held in the inbox for 5 minutes (30 for login codes) and then filed.
 
 Design and survey findings: `docs/classification-design.md`.

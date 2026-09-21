@@ -46,9 +46,9 @@ Inbox (unread):
    email reply: "send me the bill" close-outs, bills to pay manually (rates, overdue, failed
    card, bank-transfer invoices), compliance deadlines, platform relays Guy answers on the
    platform (Builderscrack, Airbnb host).
-3. **Reference** [new label] - context for a job, nothing to do now: brand guidelines, briefs,
+3. **Reference** [no Gmail label, primary inbox] - context for a job, nothing to do now: brand guidelines, briefs,
    schedules, client calendar invites, auto-replies to Guy's own outreach.
-4. **Client FYI** [new label] - a client closing a thread: thanks, "looks great", "paid".
+4. **Client FYI** [no Gmail label, primary inbox] - a client closing a thread: thanks, "looks great", "paid".
 
 Filed:
 5. **Invoices** [existing] - any money record with nothing to do: receipts (business or
