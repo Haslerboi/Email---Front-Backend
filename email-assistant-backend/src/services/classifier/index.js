@@ -5,8 +5,8 @@ import { LABELS, LABEL_KEYS, INBOX_LABELS, GMAIL_LABEL } from './labels.js';
 import { buildSystemPrompt, buildUserPrompt, jsonSchema } from './prompt.js';
 import { applyRules, hasListUnsubscribe } from './rules.js';
 
-export const CLASSIFIER_MODEL = process.env.CATEGORIZATION_MODEL || 'gpt-5.6-luna';
-export const CLASSIFIER_REASONING_EFFORT = process.env.CATEGORIZATION_REASONING_EFFORT || 'none';
+export const CLASSIFIER_MODEL = process.env.CATEGORIZATION_MODEL || 'gpt-6-luna';
+export const CLASSIFIER_REASONING_EFFORT = process.env.CATEGORIZATION_REASONING_EFFORT || 'medium';
 // Which model decides emails the rules leave open: 'openai' (Luna) or 'jev' (TypeSafe, Luna as fallback).
 export const CLASSIFIER_PROVIDER = process.env.CLASSIFIER_PROVIDER || 'openai';
 // With provider=jev: below this confidence, ask Luna instead.
